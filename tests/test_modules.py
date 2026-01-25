@@ -100,7 +100,7 @@ class TestAlerter(unittest.TestCase):
         # Check HTML contains key elements
         self.assertIn('<!DOCTYPE html>', html)
         self.assertIn('PhantomCortex', html)
-        self.assertIn('Test Threat', html)
+        self.assertIn('Amenaza de Prueba', html)
         self.assertIn('CRITICAL', html)
 
 
