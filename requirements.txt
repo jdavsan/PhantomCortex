@@ -13,7 +13,7 @@ argos-translate-files==1.1.1
 
 # Document Generation
 python-docx==1.1.0          # Word document generation
-Pillow==10.2.0              # Image processing for reports
+Pillow==10.3.0              # Image processing for reports
 
 # Email & Alerts
 secure-smtplib==0.1.1       # Enhanced SMTP with security
