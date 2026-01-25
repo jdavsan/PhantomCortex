@@ -9,7 +9,7 @@ requests==2.31.0            # HTTP requests
 
 # Translation (Offline AI)
 argostranslate==1.9.1       # Offline translation engine
-argos-translate-files==1.1.1
+argos-translate-files==1.4.1
 
 # Document Generation
 python-docx==1.1.0          # Word document generation
