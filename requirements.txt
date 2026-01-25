@@ -19,7 +19,7 @@ Pillow==10.2.0              # Image processing for reports
 secure-smtplib==0.1.1       # Enhanced SMTP with security
 
 # Data Processing
-python-dateutil==2.8.2      # Date/time utilities
+python-dateutil==2.9.0.post0      # Date/time utilities
 
 # Logging & Monitoring
 colorlog==6.8.2             # Colored console logs
