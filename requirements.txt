@@ -8,7 +8,7 @@ pyyaml==6.0.1               # YAML configuration parsing
 requests==2.31.0            # HTTP requests
 
 # Translation (Offline AI)
-argostranslate==1.9.1       # Offline translation engine
+argostranslate==1.10.0       # Offline translation engine
 argos-translate-files==1.1.1
 
 # Document Generation
