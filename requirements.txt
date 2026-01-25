@@ -2,7 +2,7 @@
 # Python 3.8+ required
 
 # Core Dependencies
-feedparser==6.0.11          # RSS feed parsing
+feedparser==6.0.12          # RSS feed parsing
 python-dotenv==1.0.0        # Environment variable management
 pyyaml==6.0.1               # YAML configuration parsing
 requests==2.31.0            # HTTP requests
