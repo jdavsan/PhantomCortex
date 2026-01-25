@@ -2,7 +2,7 @@
 # Multi-stage build for optimized image size
 
 # Stage 1: Build stage
-FROM python:3.11-slim as builder
+FROM python:3.14-slim as builder
 
 # Set working directory
 WORKDIR /app
@@ -28,7 +28,7 @@ RUN pip install --no-cache-dir --user argostranslate && \
     if en_es: argostranslate.package.install_from_path(en_es.download())"
 
 # Stage 2: Runtime stage
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 # Set labels
 LABEL maintainer="PhantomCortex Community"
