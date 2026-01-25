@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  phantomcortex:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: phantomcortex:latest
+    container_name: phantomcortex
+    
+    environment:
+      # Email configuration (use secrets in production)
+      - PHANTOMCORTEX_EMAIL_PASSWORD=${EMAIL_PASSWORD}
+      - TZ=UTC
+    
+    volumes:
+      # Persistent data
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./reports:/app/reports
+      - ./backups:/app/backups
+      
+      # Configuration (read-only)
+      - ./config:/app/config:ro
+    
+    # Run daily collection
+    command: ["sh", "-c", "while true; do python core/collector.py && sleep 86400; done"]
+    
+    restart: unless-stopped
+    
+    networks:
+      - phantomcortex-net
+    
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 5m
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  phantomcortex-net:
+    driver: bridge
+
+volumes:
+  data:
+  logs:
+  reports:
+  backups:

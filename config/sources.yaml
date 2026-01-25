@@ -1,0 +1,180 @@
+# PhantomCortex - RSS Feed Sources
+# Add or remove sources as needed
+
+sources:
+  # ===================================================================
+  # GOVERNMENT & OFFICIAL SOURCES
+  # ===================================================================
+  - name: CISA Advisories
+    url: https://www.cisa.gov/cybersecurity-advisories/all.xml
+    type: government
+    enabled: true
+    description: US Cybersecurity and Infrastructure Security Agency
+    
+  - name: US-CERT Alerts
+    url: https://www.cisa.gov/uscert/ncas/alerts.xml
+    type: government
+    enabled: true
+    description: US Computer Emergency Readiness Team alerts
+    
+  - name: CISA ICS Advisories
+    url: https://www.cisa.gov/uscert/ics/advisories/advisories.xml
+    type: government
+    enabled: true
+    description: Industrial Control Systems advisories
+    
+  - name: NVD Recent CVEs
+    url: https://nvd.nist.gov/feeds/xml/cve/misc/nvd-rss.xml
+    type: database
+    enabled: true
+    description: National Vulnerability Database
+  
+  # ===================================================================
+  # NEWS & MEDIA
+  # ===================================================================
+  - name: Cyber Security News
+    url: https://cybersecuritynews.com/feed/
+    type: news
+    enabled: true
+    description: Latest cybersecurity news and threats
+    
+  - name: The Hacker News
+    url: https://feeds.feedburner.com/TheHackersNews
+    type: news
+    enabled: true
+    description: Popular cybersecurity news site
+    
+  - name: Bleeping Computer
+    url: https://www.bleepingcomputer.com/feed/
+    type: news
+    enabled: true
+    description: Technology news and security updates
+    
+  - name: SecurityWeek
+    url: https://www.securityweek.com/feed/
+    type: news
+    enabled: true
+    description: Enterprise security news
+    
+  - name: Dark Reading
+    url: https://www.darkreading.com/rss.xml
+    type: news
+    enabled: true
+    description: Cybersecurity news and analysis
+    
+  - name: CyberScoop
+    url: https://cyberscoop.com/feed/
+    type: news
+    enabled: true
+    description: Cybersecurity news and analysis
+    
+  - name: Infosecurity Magazine
+    url: https://www.infosecurity-magazine.com/rss/news/
+    type: news
+    enabled: true
+    description: Information security magazine
+  
+  # ===================================================================
+  # TECHNICAL BLOGS & RESEARCH
+  # ===================================================================
+  - name: Malwarebytes Blog
+    url: https://www.malwarebytes.com/blog/feed
+    type: blog
+    enabled: true
+    description: Malware analysis and threat research
+    
+  - name: GBHackers
+    url: https://gbhackers.com/feed/
+    type: blog
+    enabled: true
+    description: Security news and hacking tutorials
+    
+  - name: Kaspersky Securelist
+    url: https://securelist.lat/feed/
+    type: research
+    enabled: true
+    description: Kaspersky threat research
+    
+  - name: Krebs on Security
+    url: https://krebsonsecurity.com/feed/
+    type: blog
+    enabled: true
+    description: In-depth security journalism
+  
+  # ===================================================================
+  # VENDOR THREAT INTELLIGENCE
+  # ===================================================================
+  - name: Microsoft Security
+    url: https://www.microsoft.com/en-us/security/blog/feed/
+    type: vendor
+    enabled: true
+    description: Microsoft security research and updates
+    
+  - name: Talos Intelligence
+    url: https://blog.talosintelligence.com/rss/
+    type: vendor
+    enabled: true
+    description: Cisco Talos threat intelligence
+  
+  # ===================================================================
+  # EXPLOIT DATABASES
+  # ===================================================================
+  - name: Exploit-DB
+    url: https://www.exploit-db.com/rss.xml
+    type: exploits
+    enabled: true
+    description: Exploit database and proof-of-concepts
+  
+  # ===================================================================
+  # DISABLED SOURCES (Examples for users to enable)
+  # ===================================================================
+  - name: Google Project Zero
+    url: https://googleprojectzero.blogspot.com/feeds/posts/default
+    type: research
+    enabled: false
+    description: Google's 0-day research team
+    
+  - name: Unit 42 (Palo Alto)
+    url: https://unit42.paloaltonetworks.com/feed/
+    type: vendor
+    enabled: false
+    description: Palo Alto threat intelligence
+    
+  - name: Crowdstrike Blog
+    url: https://www.crowdstrike.com/blog/feed/
+    type: vendor
+    enabled: false
+    description: Crowdstrike threat intelligence
+    
+  - name: Sophos News
+    url: https://news.sophos.com/en-us/feed/
+    type: vendor
+    enabled: false
+    description: Sophos security news and research
+    
+  - name: Threatpost
+    url: https://threatpost.com/feed/
+    type: news
+    enabled: false
+    description: Breaking threat news
+    
+  - name: ZDNet Security
+    url: https://www.zdnet.com/topic/security/rss.xml
+    type: news
+    enabled: false
+    description: ZDNet security coverage
+
+# ===================================================================
+# NOTES FOR CUSTOMIZATION
+# ===================================================================
+# 1. To add a new source, copy the template below and fill in details
+# 2. To disable a source, set enabled: false
+# 3. Check if RSS feed is still active before adding (some sites change URLs)
+# 4. Respect rate limits - too many sources may trigger blocking
+#
+# Template:
+# - name: Source Name
+#   url: https://example.com/feed.xml
+#   type: news|government|vendor|blog|research|exploits
+#   enabled: true
+#   description: Brief description

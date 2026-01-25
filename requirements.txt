@@ -1,0 +1,37 @@
+# PhantomCortex Requirements
+# Python 3.8+ required
+
+# Core Dependencies
+feedparser==6.0.11          # RSS feed parsing
+python-dotenv==1.0.0        # Environment variable management
+pyyaml==6.0.1               # YAML configuration parsing
+requests==2.31.0            # HTTP requests
+
+# Translation (Offline AI)
+argostranslate==1.9.1       # Offline translation engine
+argos-translate-files==1.1.1
+
+# Document Generation
+python-docx==1.1.0          # Word document generation
+Pillow==10.2.0              # Image processing for reports
+
+# Email & Alerts
+secure-smtplib==0.1.1       # Enhanced SMTP with security
+
+# Data Processing
+python-dateutil==2.8.2      # Date/time utilities
+
+# Logging & Monitoring
+colorlog==6.8.2             # Colored console logs
+
+# Optional: Advanced Features
+# pandas==2.1.4             # Data analysis (uncomment if needed)
+# matplotlib==3.8.2         # Charts and graphs (uncomment if needed)
+# jinja2==3.1.3             # HTML templating (uncomment if needed)
+
+# Development Dependencies (install with: pip install -r requirements-dev.txt)
+# pytest==7.4.3             # Unit testing
+# pytest-cov==4.1.0         # Code coverage
+# black==24.1.1             # Code formatting
+# flake8==7.0.0             # Code linting
+# mypy==1.8.0               # Type checking
