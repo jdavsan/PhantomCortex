@@ -1,0 +1,409 @@
+{% extends "base.html" %}
+
+{% block titulo %}Resumen semanal de amenazas{% endblock %}
+{% block color_barra %}#1f4e78{% endblock %}
+{% block etiqueta_cabecera %}Resumen semanal<br>{{ desde|fecha_larga }} – {{ hasta|fecha_larga }}{% endblock %}
+
+{% block preencabezado %}
+{{ seguimiento_total|numero }} en seguimiento, {{ informativo|length|numero }} informativas
+y {{ descartadas_total|numero }} descartadas por el filtro · {{ alertadas_total|numero }} alertadas en la semana
+{% endblock %}
+
+{% block contenido %}
+
+{% set colores = {'Critical':'#b3261e','High':'#c05621','Medium':'#8a6d0b','Low':'#2b6cb0'} %}
+
+<h1 style="margin:0 0 6px 0; font-size:19px; color:#1f2933; font-weight:bold;">
+  Resumen semanal de amenazas
+</h1>
+<p style="margin:0 0 20px 0; font-size:13px; color:#63707e;">
+  Semana del {{ desde|fecha_larga }} al {{ hasta|fecha_larga }} ·
+  lo que la alerta diaria no envió y por qué
+</p>
+
+<p style="margin:0 0 18px 0;">
+  La alerta diaria solo lleva las amenazas con relevancia igual o superior a
+  <strong>{{ umbral_relevancia|round(0)|int }}</strong> para la organización o con
+  explotación activa confirmada. Este resumen recoge el resto de la semana para que
+  nada quede sin ver: lo que conviene seguir, lo meramente informativo y el motivo
+  por el que el filtro descartó cada grupo.
+</p>
+
+{# ------------------------- estado de los activos (movido de la alerta diaria) #}
+{#
+  Venia en el correo de alertamiento diario, donde no encajaba: son cifras de estado
+  acumulado y aquel correo habla de lo detectado HOY (peticion del usuario, 2026-09-07).
+
+  Cada cifra dice AHORA lo que cuenta. Antes ponia «772 con vulnerabilidades confirmadas»
+  sin decir si eran activos o vulnerabilidades, y son cosas muy distintas: un ACTIVO
+  afectado es un activo con al menos una vulnerabilidad; una VULNERABILIDAD es un CVE en
+  un activo (2026-09-09: si toca varios paquetes de la misma maquina cuenta una sola vez),
+  asi que el mismo CVE en cien activos son cien vulnerabilidades y un solo CVE.
+
+  Los activos que no reportan NO estan aqui: mantener el inventario al dia es tarea de
+  Redes y tiene su propio informe.
+#}
+{% if estado_activos and estado_activos.activos_presentes %}
+{% set ea = estado_activos %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 24px 0; border:1px solid #e3e7ec; background-color:#fafbfc;">
+  <tr>
+    <td style="padding:16px 18px 6px 18px; font-family:Arial,Helvetica,sans-serif;
+               font-size:12px; font-weight:bold; color:#4a5563;
+               text-transform:uppercase; letter-spacing:.04em;">
+      Estado de los activos (OCS Inventory)
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 18px 10px 18px; font-family:Arial,Helvetica,sans-serif;
+               font-size:12px; color:#4a5563; line-height:1.6;">
+      Del inventario informático de la organización: {{ ea.activos_presentes|numero }} activos
+      ({{ ea.servidores|numero }} servidores y {{ ea.equipos|numero }} equipos de cómputo).
+      Cada cifra dice si cuenta <strong>activos</strong> o <strong>vulnerabilidades</strong>:
+      una vulnerabilidad es un CVE en un activo; si afecta a varios paquetes de la misma
+      máquina cuenta una sola vez, así que el mismo fallo en cien activos son cien
+      vulnerabilidades y un solo CVE.
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 18px 14px 18px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+             style="border:1px solid #eef0f3; border-collapse:collapse;">
+        {% macro fila_estado(titulo, activos, vulns, nota, color, nota_vulns='') %}
+        <tr>
+          <td valign="top" style="padding:11px 12px; font-family:Arial,Helvetica,sans-serif;
+                     font-size:12px; color:#1f2933; border-bottom:1px solid #eef0f3;
+                     background-color:#ffffff;">
+            <strong>{{ titulo }}</strong>
+            {% if nota %}<div style="font-size:11px; color:#77828f; margin-top:3px; line-height:1.5;">{{ nota }}</div>{% endif %}
+          </td>
+          <td align="right" valign="top" width="150"
+              style="padding:11px 12px; font-family:Arial,Helvetica,sans-serif;
+                     border-bottom:1px solid #eef0f3; background-color:#ffffff; white-space:nowrap;">
+            <div style="font-size:18px; font-weight:bold; color:{{ color }}; line-height:1.2;">{{ activos|numero }}</div>
+            <div style="font-size:10px; color:#77828f; text-transform:uppercase; letter-spacing:.04em;">activos</div>
+          </td>
+          <td align="right" valign="top" width="170"
+              style="padding:11px 12px; font-family:Arial,Helvetica,sans-serif;
+                     border-bottom:1px solid #eef0f3; background-color:#ffffff; white-space:nowrap;">
+            {% if vulns is not none %}
+            <div style="font-size:18px; font-weight:bold; color:{{ color }}; line-height:1.2;">{{ vulns|numero }}</div>
+            <div style="font-size:10px; color:#77828f; text-transform:uppercase; letter-spacing:.04em;">vulnerabilidades</div>
+            {% if nota_vulns %}<div style="font-size:10px; color:#8a939f;">{{ nota_vulns }}</div>{% endif %}
+            {% else %}<div style="font-size:14px; color:#a8b1bb;">—</div>{% endif %}
+          </td>
+        </tr>
+        {% endmacro %}
+
+        {{ fila_estado('Con al menos una vulnerabilidad confirmada',
+                       ea.activos_afectados, ea.vulnerabilidades,
+                       'La versión instalada es anterior a la que corrige el fallo. Son '
+                       ~ ea.cve_distintos|numero ~ ' CVE distintos repartidos por el parque; '
+                       ~ ea.activos_sin_vulnerabilidades|numero ~ ' activos no tienen ninguna.'
+                       ~ (' De ellos, ' ~ ea.activos_afectados_con_dato|numero
+                          ~ ' con el inventario al día (' ~ ea.vulnerabilidades_con_dato|numero
+                          ~ ' vulnerabilidades) y ' ~ ea.sin_reportar_afectados|numero
+                          ~ ' cuyo dato es de hace más de ' ~ ea.dias_sin_reportar|numero
+                          ~ ' días.' if ea.sin_reportar_afectados else ''),
+                       '#b3261e') }}
+        {{ fila_estado('En producción o contingencia',
+                       ea.expuestos_activos, ea.expuestos_vulnerabilidades,
+                       'De los afectados, los que están en un entorno expuesto. Es lo que se '
+                       'atiende primero.'
+                       ~ (' ' ~ ea.expuestos_activos_con_dato|numero
+                          ~ ' de ellos reportaron el inventario en los últimos '
+                          ~ ea.dias_sin_reportar|numero ~ ' días.'
+                          if ea.expuestos_activos != ea.expuestos_activos_con_dato else ''),
+                       '#b3261e') }}
+        {{ fila_estado('Fuera de soporte y con vulnerabilidades',
+                       ea.fuera_soporte_con_vulnerabilidades, ea.fuera_soporte_vulnerabilidades,
+                       'Sistema sin soporte del fabricante Y con vulnerabilidades confirmadas: '
+                       'actualizar el paquete no basta, hay que subir de versión el sistema.',
+                       '#c05621') }}
+        {{ fila_estado('Fuera de soporte, sin vulnerabilidades conocidas hoy',
+                       ea.fuera_soporte_sin_vulnerabilidades, none,
+                       'Sin soporte no habrá parches cuando aparezca la próxima. Riesgo futuro, '
+                       'no de hoy. Con los anteriores suman ' ~ ea.fuera_soporte_activos|numero
+                       ~ ' activos fuera de soporte.', '#8a6d0b') }}
+        {# Quinta fila (2026-09-10): los activos que NO REPORTAN. Están contados en las
+           cuatro de arriba, con un dato de hace más de ocs_stale_days días, así que sus
+           vulnerabilidades no se pueden ni afirmar ni negar. Mantener el inventario al
+           día es una tarea operativa, no una vulnerabilidad, y por eso
+           va en su propia fila, en ámbar y con su explicación. #}
+        {# Revisión de claridad del 2026-09-15: esta fila enfrentaba «76 activos» con
+           «3.081 vulnerabilidades» que no son de los 76, sino de los 32 que además
+           figuran como afectados. Ahora la cifra grande de la derecha se rotula con
+           los activos a los que pertenece. #}
+        {{ fila_estado('Sin reportar: su dato es de hace más de '
+                       ~ ea.dias_sin_reportar|numero ~ ' días',
+                       ea.sin_reportar_activos, ea.sin_reportar_vulnerabilidades,
+                       'Su agente de OCS Inventory no envía el inventario desde hace más de '
+                       ~ ea.dias_sin_reportar|numero ~ ' días. De esos '
+                       ~ ea.sin_reportar_activos|numero ~ ' activos, '
+                       ~ ea.sin_reportar_afectados|numero
+                       ~ ' figuran con vulnerabilidades confirmadas calculadas con el último '
+                       'dato conocido, y son esos los que suman la cifra de la derecha: no se '
+                       'pueden ni afirmar ni negar hoy. Los ' ~ ea.sin_reportar_activos|numero
+                       ~ ' están contados también en las cifras de arriba; sin ellos serían '
+                       ~ ea.activos_afectados_con_dato|numero ~ ' activos y '
+                       ~ ea.vulnerabilidades_con_dato|numero ~ ' vulnerabilidades. Es '
+                       'mantenimiento del inventario, no una vulnerabilidad: hay que revisar '
+                       'el agente o dar de baja la máquina.', '#8a6d0b',
+                       nota_vulns='de ' ~ ea.sin_reportar_afectados|numero ~ ' de esos activos') }}
+      </table>
+      {% if url_activos %}
+      <div style="padding:8px 2px 0; font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#8a939f;">
+        Detalle por activo: <a href="{{ url_activos|url_segura }}" style="color:#1f4e78;">{{ url_activos }}</a>
+      </div>
+      {% endif %}
+    </td>
+  </tr>
+</table>
+{% endif %}
+
+{# --------------------------------------------------------- cifras #}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 24px 0; border:1px solid #e3e7ec; background-color:#fafbfc;">
+  <tr>
+    <td style="padding:16px 18px 6px 18px; font-family:Arial,Helvetica,sans-serif;
+               font-size:12px; font-weight:bold; color:#4a5563;
+               text-transform:uppercase; letter-spacing:.04em;">
+      La semana en cifras
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 12px 14px 12px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+        <tr>
+          {% for etiqueta, valor, color in [
+              ('Alertadas', alertadas_total, '#b3261e'),
+              ('Seguimiento', seguimiento_total, '#c05621'),
+              ('Informativas', informativo|length, '#1f4e78'),
+              ('Descartadas', descartadas_total, '#63707e')] %}
+          <td align="center" width="25%"
+              style="padding:6px; font-family:Arial,Helvetica,sans-serif;">
+            <div style="font-size:26px; font-weight:bold; line-height:1.1;
+                        color:{% if valor %}{{ color }}{% else %}#a8b1bb{% endif %};">{{ valor|numero }}</div>
+            <div style="font-size:10px; color:#77828f; text-transform:uppercase;
+                        letter-spacing:.05em; margin-top:3px;">{{ etiqueta }}</div>
+          </td>
+          {% endfor %}
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+
+{# ------------------------------------------------------ 1. seguimiento #}
+<div style="font-family:Arial,Helvetica,sans-serif; font-size:12px; font-weight:bold;
+            color:#4a5563; text-transform:uppercase; letter-spacing:.04em;
+            margin:0 0 6px 0;">
+  1. Seguimiento
+</div>
+{# Revisión de claridad del 2026-09-15: decía «relevancia entre 25 y 49» y en la lista
+   aparecían entradas críticas con relevancia 58, porque el criterio real es «relevancia
+   25 o más, O severidad crítica o alta», y una vulnerabilidad de relevancia alta puede
+   quedar fuera de la alerta diaria por otro motivo (por ejemplo, porque todavía no se ha
+   confirmado en ningún activo). Ahora el texto dice el criterio completo. #}
+<p style="margin:0 0 12px 0; font-size:12px; color:#63707e; line-height:1.55;">
+  Vulnerabilidades correlacionadas con el inventario (coincidencia con confianza igual o
+  superior a {{ ('%.1f' % min_confianza)|replace('.', ',') }}) que no entraron en ninguna
+  alerta diaria de la semana y que cumplen una de estas dos condiciones: relevancia igual
+  o superior a 25, o severidad crítica o alta aunque su relevancia sea menor. Por eso aquí
+  puede verse una crítica con relevancia por encima de
+  {{ umbral_relevancia|round(0)|int }}: no se alertó por otro motivo, que se indica en cada
+  línea. No exigen acción inmediata, pero conviene vigilarlas y comprobar la versión
+  instalada.
+</p>
+
+{% if seguimiento %}
+{% for grupo in seguimiento %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 14px 0; border:1px solid #e3e7ec; border-collapse:collapse;">
+  <tr>
+    <td colspan="3" style="padding:9px 12px; background-color:#f2f4f7;
+               border-left:4px solid {% if grupo.afectada %}#b3261e{% else %}#c05621{% endif %};
+               font-family:Arial,Helvetica,sans-serif; font-size:13px; font-weight:bold;
+               color:#1f2933;">
+      {{ grupo.tecnologia.name }}
+      {% if grupo.tecnologia.version_installed %}
+      <span style="font-family:Consolas,monospace; font-weight:normal; color:#63707e;">{{ grupo.tecnologia.version_installed }}</span>
+      {% endif %}
+      <span style="font-weight:normal; color:#77828f; font-size:11px;">
+        · {{ grupo.amenazas|length }} amenaza{{ 's' if grupo.amenazas|length != 1 else '' }}
+        {% if grupo.tecnologia.exposure == 'internet' %}· expuesta a Internet{% endif %}
+        {% if grupo.afectada %}· <span style="color:#b3261e; font-weight:bold;">versión instalada vulnerable</span>{% endif %}
+      </span>
+    </td>
+  </tr>
+  {% for a in grupo.amenazas %}
+  <tr style="background-color:{{ '#ffffff' if loop.index0 % 2 == 0 else '#fafbfc' }};">
+    <td style="padding:8px 12px; font-family:Arial,Helvetica,sans-serif; font-size:12px;
+               color:#2b3540; border-bottom:1px solid #eef0f3; line-height:1.45;">
+      <a href="{{ a.url|url_segura }}" style="color:#1f2933; text-decoration:none;">{{ (a.title_es or a.title_en)|recortar(90) }}</a>
+      <div style="font-size:11px; color:#8a939f; margin-top:2px;">
+        {% if a.cve %}<span style="font-family:Consolas,monospace;">{{ a.cve }}</span> · {% endif %}
+        {{ a.first_seen_at|fecha_larga }}
+        {# El motivo se leía como código interno («sin_activos_confirmados»); ahora va la
+           frase en español (2026-09-15). #}
+        {% if a.alert_skip_reason %} · no se alertó {{ motivos_es.get(a.alert_skip_reason, a.alert_skip_reason|replace('_', ' ')) }}{% endif %}
+      </div>
+    </td>
+    <td width="70" style="padding:8px 10px; font-family:Arial,Helvetica,sans-serif; font-size:11px;
+               font-weight:bold; color:{{ colores.get(a.severity, '#63707e') }};
+               border-bottom:1px solid #eef0f3; white-space:nowrap;">
+      {{ a.severity|severidad_texto }}
+    </td>
+    <td width="44" align="center" style="padding:8px 10px; font-family:Arial,Helvetica,sans-serif;
+               font-size:12px; color:#4a5563; border-bottom:1px solid #eef0f3;">
+      {{ a.relevance|round(0)|int }}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% endfor %}
+{% else %}
+<p style="margin:0 0 20px 0; font-size:12px; color:#8a939f;">
+  Ninguna amenaza correlacionada con el inventario quedó en seguimiento esta semana.
+</p>
+{% endif %}
+
+{# ------------------------------------------------------ 2. informativo #}
+<div style="font-family:Arial,Helvetica,sans-serif; font-size:12px; font-weight:bold;
+            color:#4a5563; text-transform:uppercase; letter-spacing:.04em;
+            margin:18px 0 6px 0;">
+  2. Informativo
+</div>
+<p style="margin:0 0 12px 0; font-size:12px; color:#63707e; line-height:1.55;">
+  Noticias, campañas y vulnerabilidades de severidad media o superior sin exposición
+  demostrada de la organización. Sirven como contexto; no requieren actuación.
+</p>
+
+{% if informativo %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 10px 0; border:1px solid #e3e7ec; border-collapse:collapse;">
+  {% for a in informativo %}
+  <tr style="background-color:{{ '#ffffff' if loop.index0 % 2 == 0 else '#fafbfc' }};">
+    <td style="padding:7px 12px; font-family:Arial,Helvetica,sans-serif; font-size:12px;
+               color:#2b3540; border-bottom:1px solid #eef0f3; line-height:1.45;">
+      <a href="{{ a.url|url_segura }}" style="color:#1f2933; text-decoration:none;">{{ (a.title_es or a.title_en)|recortar(90) }}</a>
+      {% if a.cve %}
+      <span style="font-family:Consolas,monospace; font-size:11px; color:#8a939f;">{{ a.cve }}</span>
+      {% endif %}
+    </td>
+    <td width="70" style="padding:7px 10px; font-family:Arial,Helvetica,sans-serif; font-size:11px;
+               font-weight:bold; color:{{ colores.get(a.severity, '#63707e') }};
+               border-bottom:1px solid #eef0f3; white-space:nowrap;">
+      {{ a.severity|severidad_texto }}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% else %}
+<p style="margin:0 0 10px 0; font-size:12px; color:#8a939f;">
+  Sin entradas informativas esta semana.
+</p>
+{% endif %}
+
+{% if omitidas %}
+<p style="margin:0 0 20px 0; font-size:11px; color:#8a939f;">
+  El resumen se limita a {{ maximo|numero }} amenazas; {{ omitidas|numero }} más de menor
+  relevancia pueden consultarse en la interfaz.
+</p>
+{% endif %}
+
+{# ------------------------------------------- 3. lo que el filtro descartó #}
+<div style="font-family:Arial,Helvetica,sans-serif; font-size:12px; font-weight:bold;
+            color:#4a5563; text-transform:uppercase; letter-spacing:.04em;
+            margin:18px 0 6px 0;">
+  3. Lo que el filtro descartó y por qué
+</div>
+
+{% if descartadas %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 20px 0; background-color:#f2f6fb; border:1px solid #d6e2ef;">
+  <tr>
+    <td style="padding:12px 16px; font-family:Arial,Helvetica,sans-serif;
+               font-size:12px; color:#2b3540; line-height:1.65;">
+      En total, <strong>{{ descartadas_total|numero }}</strong> amenaza{{ 's' if descartadas_total != 1 else '' }}
+      de la semana no se {{ 'alertaron' if descartadas_total != 1 else 'alertó' }}:
+      {% for d in descartadas %}
+      <div style="margin-top:6px;">• {{ d.texto }}</div>
+      {% endfor %}
+    </td>
+  </tr>
+</table>
+{% else %}
+<p style="margin:0 0 20px 0; font-size:12px; color:#8a939f;">
+  El filtro no descartó ninguna amenaza esta semana.
+</p>
+{% endif %}
+
+{# ------------------------------------------------ 4. alertadas de la semana #}
+<div style="font-family:Arial,Helvetica,sans-serif; font-size:12px; font-weight:bold;
+            color:#4a5563; text-transform:uppercase; letter-spacing:.04em;
+            margin:18px 0 6px 0;">
+  4. Recordatorio de lo alertado esta semana
+</div>
+
+{% if alertadas %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 20px 0; border:1px solid #e3e7ec; border-collapse:collapse;">
+  {% for a in alertadas %}
+  <tr style="background-color:{{ '#ffffff' if loop.index0 % 2 == 0 else '#fafbfc' }};">
+    <td style="padding:7px 12px; font-family:Arial,Helvetica,sans-serif; font-size:12px;
+               color:#2b3540; border-bottom:1px solid #eef0f3; line-height:1.45;">
+      <a href="{{ a.url|url_segura }}" style="color:#1f4e78; text-decoration:underline;">{{ (a.title_es or a.title_en)|recortar(90) }}</a>
+      <div style="font-size:11px; color:#8a939f; margin-top:2px;">
+        {% if a.cve %}<span style="font-family:Consolas,monospace;">{{ a.cve }}</span>{% if a.in_kev %} · KEV{% endif %} · {% endif %}
+        alertada el {{ a.alerted_at|fecha_larga }}
+      </div>
+    </td>
+    <td width="70" style="padding:7px 10px; font-family:Arial,Helvetica,sans-serif; font-size:11px;
+               font-weight:bold; color:{{ colores.get(a.severity, '#63707e') }};
+               border-bottom:1px solid #eef0f3; white-space:nowrap;">
+      {{ a.severity|severidad_texto }}
+    </td>
+    <td width="44" align="center" style="padding:7px 10px; font-family:Arial,Helvetica,sans-serif;
+               font-size:12px; color:#4a5563; border-bottom:1px solid #eef0f3;">
+      {{ a.relevance|round(0)|int }}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% if alertadas_omitidas %}
+<p style="margin:-12px 0 20px 0; font-size:11px; color:#8a939f;">
+  Se muestran las {{ alertadas|length }} más relevantes de {{ alertadas_total|numero }} alertadas; el resto está en la interfaz.
+</p>
+{% endif %}
+{% else %}
+<p style="margin:0 0 20px 0; font-size:12px; color:#8a939f;">
+  No se envió ninguna alerta esta semana.
+</p>
+{% endif %}
+
+{% if url_interfaz %}
+<p style="margin:0 0 18px 0; font-size:12px; color:#63707e;">
+  El detalle de cada amenaza, con su estado y el motivo del filtro, está en la
+  interfaz de consulta:
+  <a href="{{ url_interfaz|url_segura }}" style="color:#1f4e78;">{{ url_interfaz }}</a>
+</p>
+{% endif %}
+
+{# ------------------------------------------------------- nota metodológica #}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:6px 0 0 0; border-top:1px solid #e3e7ec;">
+  <tr>
+    <td style="padding:14px 0 0 0; font-family:Arial,Helvetica,sans-serif;
+               font-size:11px; color:#8a939f; line-height:1.6;">
+      <strong style="color:#63707e;">Cómo leer este resumen.</strong>
+      La relevancia (0-100) combina la severidad técnica con la criticidad,
+      exposición y versión instalada de las tecnologías afectadas. Las amenazas de
+      este correo no volverán a aparecer en el resumen de la semana siguiente; si
+      alguna pasa a afectar a la organización (por ejemplo, al recibir puntuación
+      oficial), entrará en la alerta diaria.
+    </td>
+  </tr>
+</table>
+
+{% endblock %}

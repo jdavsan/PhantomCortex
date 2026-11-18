@@ -1,0 +1,525 @@
+{% extends "base.html" %}
+{% block titulo %}{{ a.nombre }}{% endblock %}
+{% block contenido %}
+{% from "_paginacion.html" import paginacion %}
+{#
+  Ficha de un activo (docs/INVENTARIO_OCS_2026-09-04.md, apartado 3.3).
+  Orden de lectura: 1) qué hay que actualizar, 2) avisos de soporte, 3) «¿Le aplica este
+  CVE?», 4) datos de OCS y hallazgos, 5) actualizaciones de Windows, 6) las
+  actualizaciones pendientes con su trazabilidad, 7) el detalle por vulnerabilidad y
+  paquete, 8) SBOM y configuración segura, 9) software instalado.
+  Sin style= ni on*= (CSP).
+
+  SOLO LO QUE AFECTA (2026-09-09). Esta ficha tenía una tabla «Amenazas evaluadas para
+  este activo» con una fila por CVE y paquete y los TRES veredictos: en el activo 511 de
+  producción, 182 filas (155 afectadas, 22 no afectadas y 5 sin dato) para 69
+  vulnerabilidades reales. El usuario lo rechazó dos veces: «si una vulnerabilidad se
+  repite se cuente solo como una y en esa misma se deje la trazabilidad de las versiones y
+  de la última versión a la que se debe actualizar» y «recuerda eliminar lo que no me
+  afecta… CVE-2023-42366 · Media · No afectado · busybox-initramfs … ya incluye la
+  corrección». Ahora la tabla principal es la de ACTUALIZACIONES
+  («_remediaciones_activo.html», una entrada por cosa que hay que actualizar, con la
+  versión objetivo y la cola de versiones); de lo que no afecta queda una sola línea al
+  pie de ese panel, y la exportación en CSV sigue trayendo todos los veredictos.
+#}
+{#
+  Se calcula UNA vez y lo comparten la tarjeta de arriba y el parcial de más abajo: la
+  cifra grande y la tabla no pueden decir números distintos.
+#}
+{% set act = actualizaciones_del_activo(a.id) if actualizaciones_del_activo is defined
+   else {'grupos': [], 'total': 0, 'recortado': False, 'vulnerabilidades': 0, 'paquetes': 0, 'filas': 0, 'aceptadas': 0} %}
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Ficha de un activo" data-tour-texto="Todo sobre un activo: sus datos de OCS, su soporte, sus hallazgos, qué vulnerabilidades le aplican con la evidencia y qué software tiene instalado.">
+  <div>
+    <h1>{{ a.nombre }}</h1>
+    {# Una sola etiqueta de sistema (2026-09-15): decía «Ubuntu 24.04 24.04.4 LTS», con la
+       versión repetida; «ocs.etiqueta_sistema» la compone una vez y deja el detalle para
+       la tabla de datos, y solo cuando añade algo (el nombre en clave de Debian). #}
+    <p>{{ a.origen_es }} · {{ a.sistema_es or 'sistema sin datos' }}
+       {%- if a.ip %} · IP <span class="mono">{{ a.ip }}</span>{% endif %} · {{ a.zona_es | lower }}
+       {%- if a.retirado %} · <span class="txt-alto">retirado de OCS Inventory{% if a.retirado_desde %} el {{ a.retirado_desde | fecha_es }}{% endif %}</span>{% endif %}</p>
+  </div>
+  <div class="acciones-titulo">
+    <a class="btn" href="{{ url_for('activos.exportar_activo', activo_id=a.id) }}">Exportar veredictos (CSV)</a>
+    <a class="btn" href="{{ url_for('activos.lista', origen=a.origen) }}">Volver a activos</a>
+  </div>
+</div>
+
+{# ================================================== 1. qué pasa ahora #}
+{#
+  La cifra grande es lo que hay que HACER: cuántas actualizaciones tiene pendientes el
+  activo, la misma cifra y la misma unidad que la tabla de abajo. Debajo, como
+  trazabilidad, cuántas vulnerabilidades cubren y en cuántos paquetes están. Antes la
+  cifra grande eran las vulnerabilidades confirmadas y la tabla tenía otro número
+  (revisión del 2026-09-09).
+#}
+<div class="rejilla c3 mb-18" data-tour="2" data-tour-titulo="Indicadores del activo" data-tour-texto="Lo primero es cuántas actualizaciones hay pendientes en este activo: una por cosa que hay que actualizar, que es la misma cifra que cuenta la tabla «Actualizaciones pendientes» de más abajo. Debajo, la trazabilidad: cuántas vulnerabilidades distintas resuelven esas actualizaciones y en cuántos paquetes están. La segunda tarjeta cuenta las vulnerabilidades confirmadas, una por CVE, y la tercera cuánto del software instalado está clasificado en una tecnología del inventario.">
+  {# Un cero va en neutro, nunca en verde ni en color de riesgo (regla de color del
+     proyecto): «0 actualizaciones pendientes» es una ausencia, no un logro que destacar. #}
+  {#
+    Activo retirado de OCS Inventory (2026-09-15): «0 actualizaciones pendientes» era
+    cierto y engañoso a la vez, porque no hay ni habrá cola. La tarjeta cuenta entonces
+    las remediaciones CONGELADAS, en ámbar: no son trabajo hecho (nunca verde) ni trabajo
+    pendiente que alguien pueda hacer (nunca rojo).
+  #}
+  {% if retirado %}
+  <div class="panel metrica medio">
+    <div class="valor">{{ retirado.congeladas | numero }}</div>
+    <div class="etiqueta">{{ 'Remediación congelada' if retirado.congeladas == 1 else 'Remediaciones congeladas' }}</div>
+    <div class="nota">el activo ya no figura en OCS Inventory{% if retirado.desde %} desde el {{ retirado.desde | fecha_es }}{% endif %}:
+      ninguna se puede confirmar ni cerrar, porque no llega inventario nuevo con el que compararla</div>
+  </div>
+  {% else %}
+  <div class="panel metrica {% if act.total %}critico{% else %}neutro{% endif %}">
+    <div class="valor">{{ act.total | numero }}</div>
+    <div class="etiqueta">{{ 'Actualización pendiente' if act.total == 1 else 'Actualizaciones pendientes' }}</div>
+    <div class="nota">{% if act.total %}una por cosa que hay que actualizar (activo y origen de paquete); {{ 'cubre' if act.total == 1 else 'cubren' }}
+      {{ act.vulnerabilidades | numero }} vulnerabilidad{{ 'es' if act.vulnerabilidades != 1 }} en
+      {{ act.paquetes | numero }} paquete{{ 's' if act.paquetes != 1 }}
+      ({{ act.filas | numero }} fila{{ 's' if act.filas != 1 }} de remediación){% else %}nada
+      pendiente de actualizar en este activo{% endif %}</div>
+  </div>
+  {% endif %}
+  <div class="panel metrica {% if not conteo.afectado %}neutro{% elif retirado %}medio{% else %}alto{% endif %}">
+    <div class="valor">{{ conteo.afectado | numero }}</div>
+    <div class="etiqueta">{{ 'Vulnerabilidad confirmada' if conteo.afectado == 1 else 'Vulnerabilidades confirmadas' }}</div>
+    <div class="nota">una por CVE con la versión instalada vulnerable{% if conteo.kev %}; {{ conteo.kev | numero }} con explotación activa (KEV){% endif %}{% if retirado %}. Son las del <strong>último inventario conocido</strong>{% if retirado.desde %}, el del {{ retirado.desde | fecha_es }}{% endif %}: hoy no se pueden ni confirmar ni descartar{% endif %}</div>
+  </div>
+  <div class="panel metrica neutro">
+    <div class="valor">{{ mapeado | numero }} <span class="fs-18 tenue">/ {{ total_software | numero }}</span></div>
+    <div class="etiqueta">Software clasificado</div>
+    <div class="nota">programas con tecnología del inventario, sobre el total instalado</div>
+  </div>
+</div>
+
+{#
+  Riesgo aceptado (excepciones con vencimiento, 2026-09-10). Si hay alguna excepción
+  vigente sobre este activo se dice aquí, arriba, con quién la acepta y hasta cuándo: la
+  tarjeta de «Actualizaciones pendientes» ya no las cuenta, y una cifra que baja por una
+  aceptación de riesgo —y no porque el trabajo se haya hecho— tiene que verse. Cada
+  vulnerabilidad cubierta lleva además su insignia en «Detalle por vulnerabilidad y
+  paquete», más abajo. Ámbar (riesgo asumido que sigue en pie), nunca verde.
+#}
+{% if excepciones_activo %}
+<div class="aviso aviso-nivel" role="status">
+  <div>
+    <strong>{{ excepciones_activo | length | numero }} {{ 'excepción vigente' if excepciones_activo | length == 1 else 'excepciones vigentes' }}: riesgo aceptado en este activo.</strong>
+    {{ 'Esa vulnerabilidad no cuenta' if excepciones_activo | length == 1 else 'Esas vulnerabilidades no cuentan' }}
+    en la cola de trabajo ni en las cifras de riesgo mientras la aceptación esté vigente, pero
+    {{ 'sigue' if excepciones_activo | length == 1 else 'siguen' }} aquí a la vista, con la insignia «Riesgo aceptado»,
+    y {{ 'volverá' if excepciones_activo | length == 1 else 'volverán' }} solas cuando venza o se revoque.
+    <ul class="lista-lineas">
+    {% for e in excepciones_activo %}
+      <li><span class="insignia medio">Riesgo aceptado{{ ' (permanente)' if e.permanente }}</span>
+        {% if e.kev %}<span class="insignia kev" title="Explotación activa confirmada por CISA cuando se aceptó el riesgo">KEV</span>{% endif %}
+        {{ e.descripcion }} · {% if e.permanente %}permanente, sin fecha de vencimiento{% else %}hasta el {{ e.vence_at | fecha_es }}
+        ({{ e.dias_restantes | numero }} día{{ 's' if e.dias_restantes != 1 }}){% endif %}
+        · lo acepta {{ e.responsable_nombre }} ({{ e.responsable_correo }})
+        · <a href="{{ url_for('excepciones.lista', activo=a.id) }}">ver la excepción</a></li>
+    {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endif %}
+
+{#
+  UN SOLO mensaje cierto para un activo retirado de OCS Inventory (2026-09-15, punto 1 de
+  la revisión de claridad). Antes la ficha se contradecía cuatro veces: un aviso decía que
+  las 22 vulnerabilidades confirmadas «entran en la cola en la próxima sincronización»
+  (no entrarán nunca), justo debajo había 142 remediaciones ya abiertas en estado «Activo
+  retirado», y el plan de remediación decía «0 actualizaciones por aplicar · No hay
+  activos con la versión vulnerable». Ámbar: no es un éxito ni una vulnerabilidad nueva,
+  es mantenimiento del inventario.
+#}
+{% if retirado %}
+<div class="aviso aviso-nivel" role="status">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+  <div><strong>Este activo ya no figura en OCS Inventory{% if retirado.desde %} desde el {{ retirado.desde | fecha_es }} ({{ retirado.desde | hace }}){% endif %}.</strong>
+    Sus {{ retirado.vulnerabilidades | numero }} vulnerabilidad{{ 'es' if retirado.vulnerabilidades != 1 }}
+    confirmada{{ 's' if retirado.vulnerabilidades != 1 }} y sus {{ retirado.remediaciones | numero }}
+    remediaci{{ 'ón' if retirado.remediaciones == 1 else 'ones' }} quedaron congeladas con el último dato
+    conocido: ni se pueden confirmar ni cerrar, porque no llega inventario nuevo con el que compararlas.
+    Si la máquina sigue en servicio, hay que revisar su agente de OCS Inventory; si se dio de baja, no hay
+    nada que hacer. Nada de lo que hay más abajo entrará en la cola de remediación mientras el activo no
+    vuelva a aparecer en OCS Inventory.</div>
+</div>
+{% endif %}
+
+{% if a.soporte and a.soporte.fuera %}
+<div class="aviso error" role="status">
+  <strong>Sistema fuera de soporte.</strong> {{ a.so_nombre }} ({{ a.soporte.etiqueta }}) dejó de recibir
+  actualizaciones de seguridad el {{ a.soporte.eol | fecha_es }}: cualquier vulnerabilidad nueva quedará sin corregir.
+</div>
+{% elif a.soporte and a.soporte.proximo %}
+<div class="aviso aviso-nivel" role="status">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+  <div><strong>Fin de soporte próximo.</strong> {{ a.so_nombre }} ({{ a.soporte.etiqueta }}) deja de recibir parches el {{ a.soporte.eol | fecha_es }}, en {{ a.soporte.dias | numero }} días.</div>
+</div>
+{% endif %}
+{% if a.sin_reportar %}
+<div class="aviso aviso-nivel" role="status">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+  <div><strong>Activo sin reportar.</strong> El último inventario es de {{ a.ultimo_inventario | fecha_es if a.ultimo_inventario else 'nunca' }}
+    (más de {{ dias_sin_reportar }} días): lo que se muestra puede no reflejar el estado actual del activo.</div>
+</div>
+{% endif %}
+
+{# ============================================ 2. ¿le aplica este CVE? #}
+{# Solo para administradores: la consulta guarda el veredicto en «aplicabilidad», así
+   que no es una lectura (2026-09-07). Quien solo consulta ya tiene, más abajo, la
+   tabla completa de amenazas evaluadas para este activo. #}
+{% if puede_operar_amenazas %}
+<div class="panel" id="consulta-cve" data-zona-viva data-zona-nombre="Consulta de un CVE"
+     tabindex="-1" data-tour="3" data-tour-titulo="Consulta inmediata" data-tour-texto="Escriba un CVE y el sistema responde con los paquetes instalados y la versión que corrige el fallo, consultando las bases de datos de la distribución. Sirve para responder a un aviso externo sin esperar a la recolección.">
+  <div class="panel-cabecera">
+    <h2>¿Le aplica este CVE?</h2>
+    <span class="sub">Escriba un identificador y el sistema responde con los paquetes instalados y la versión que corrige el fallo: OSV.dev para Debian y Ubuntu, VuXML para FreeBSD y comparación de versión con el aviso para el resto.</span>
+  </div>
+  <div class="panel-cuerpo">
+    <form method="post" action="{{ url_for('activos.aplica', activo_id=a.id) }}" class="filtros"
+          data-accion-viva="consulta-cve" data-accion-espera="Consultando…"
+          data-accion-tiempo="120000">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="campo flex2-220">
+        <label for="cve">Identificador CVE</label>
+        <input type="text" id="cve" name="cve" class="mono" value="{{ cve_consultado }}" placeholder="CVE-2024-11053"
+               pattern="[Cc][Vv][Ee]-[0-9]{4}-[0-9]{4,}" required>
+      </div>
+      <button class="btn primario" type="submit">Comprobar</button>
+    </form>
+    {% if respuesta %}
+    <div class="respuesta-cve {{ respuesta.veredicto }} mt-14" role="status">
+      <div class="veredicto">
+        <span class="mono">{{ respuesta.cve }}</span>:
+        {% if respuesta.veredicto == 'afectado' %}sí le aplica: la versión instalada es vulnerable
+        {% elif respuesta.veredicto == 'no_afectado' %}no le aplica
+        {% else %}sin dato suficiente{% endif %}
+      </div>
+      {% if respuesta.amenaza %}
+      <div class="pequeno mt-8">Amenaza registrada:
+        <a href="{{ url_for('amenazas.detalle', threat_id=respuesta.amenaza.id) }}">{{ (respuesta.amenaza.title_es or respuesta.amenaza.title_en) | recortar(90) }}</a>
+        · <span class="insignia {{ respuesta.amenaza.severity | lower }}">{{ respuesta.amenaza.severity | severidad_es }}</span>
+        {% if respuesta.amenaza.in_kev %}<span class="insignia kev">KEV</span>{% endif %}</div>
+      {% else %}
+      <div class="pequeno mt-8">Este CVE no figura entre las amenazas recolectadas; la respuesta se basa solo en las bases de datos de las distribuciones.</div>
+      {% endif %}
+      {% if respuesta.lineas %}
+      <ul class="lista-lineas">{% for l in respuesta.lineas %}<li>{{ l }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if respuesta.filas %}
+      <div class="tabla-envoltorio mt-12" tabindex="0" role="region"
+           aria-label="Tabla de la respuesta a la consulta del CVE, con desplazamiento horizontal">
+        <table class="tabla-compacta">
+          <thead><tr><th>Paquete</th><th>Versión instalada</th><th>Versión corregida</th><th>Veredicto</th><th>Evidencia</th></tr></thead>
+          <tbody>
+          {% for f in respuesta.filas %}
+            <tr>
+              <td class="mono envolver">{{ (f.paquete or '—') | recortar(40) }}</td>
+              <td class="mono">{{ f.version_instalada or '—' }}</td>
+              <td class="mono">{{ f.version_corregida or '—' }}</td>
+              <td><span class="chip {% if f.veredicto == 'afectado' %}afectada{% elif f.veredicto == 'no_afectado' %}no-afectada{% endif %}">{{ f.veredicto_es }}</span></td>
+              <td class="pequeno">{{ f.evidencia }}{% if f.aviso %} · <span class="mono">{{ f.aviso | recortar(40) }}</span>{% endif %} <span class="tenue">({{ f.motor_es }})</span></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ================================== 3. datos del activo y hallazgos #}
+{#
+  El panel «Veredictos» (dona con el reparto afectado / no afectado / sin dato) se retiró
+  el 2026-09-09: pintaba lo que no afecta, que es justo lo que el usuario pidió quitar. Lo
+  que se evaluó y no afecta se dice en una línea al pie del panel de actualizaciones.
+  Los «Hallazgos de política», que vivían dentro de ese panel, van ahora aquí.
+#}
+<div class="rejilla dos-uno">
+  <div class="panel" data-tour="4" data-tour-titulo="Lo que informa OCS" data-tour-texto="Sistema, versión, ciclo de soporte, entorno, proceso, dirección IP, usuario y fechas de inventario.">
+    <div class="panel-cabecera"><h2>Datos del activo</h2><span class="sub">Tal como los informa el agente de OCS Inventory.</span></div>
+    <div class="panel-cuerpo sin-relleno">
+      <div class="tabla-envoltorio">
+        <table class="tabla-compacta tabla-datos">
+          <tbody>
+            {# Las siglas, explicadas la primera vez que se leen (2026-09-15): «OCS servidores,
+               identificador 5642» no decía a nadie de qué identificador se hablaba. #}
+            <tr><th scope="row">Tipo</th><td>{{ a.origen_es }} <span class="tenue pequeno">(inventario de <abbr title="Open Computers and Software Inventory: el inventario corporativo del que se leen los activos y el software que tienen instalado">OCS Inventory</abbr> de {{ 'servidores' if a.origen == 'servidores' else 'equipos de cómputo' }}, número de máquina {{ a.ocs_id }})</span></td></tr>
+            <tr><th scope="row">Sistema operativo</th><td>{{ a.sistema_es or '—' }}{% if a.sistema_detalle_es %}<div class="pequeno tenue">Como lo escribe el agente: {{ a.sistema_detalle_es }}</div>{% endif %}</td></tr>
+            <tr><th scope="row">Ciclo y soporte</th><td>
+              {% if a.soporte and not a.soporte.sin_datos %}{{ a.soporte.etiqueta }} ·
+                {% if a.soporte.fuera %}<span class="txt-critico-b">sin soporte desde el {{ a.soporte.eol | fecha_es }}</span>
+                {% elif a.soporte.eol %}soporte hasta el {{ a.soporte.eol | fecha_es }}{% if a.soporte.dias is not none %} ({{ a.soporte.dias | numero }} días){% endif %}
+                {% else %}sin fecha de fin publicada{% endif %}
+              {% elif a.so_ciclo %}{{ a.so_ciclo }} · <span class="tenue">sin dato en endoflife.date</span>
+              {% else %}<span class="tenue">—</span>{% endif %}</td></tr>
+            {% if a.ecosistema %}<tr><th scope="row">Base de datos de vulnerabilidades</th><td><span class="mono">{{ a.ecosistema }}</span>
+              <div class="pequeno tenue">Nombre con el que <abbr title="Open Source Vulnerabilities: base de datos pública de vulnerabilidades de software libre, con la versión que corrige cada fallo en cada distribución">OSV.dev</abbr> conoce esta distribución; es con la que se compara cada paquete instalado.</div></td></tr>{% endif %}
+            <tr><th scope="row">Dirección IP</th><td class="mono">{{ a.ip or '—' }}</td></tr>
+            <tr><th scope="row">Entorno</th><td>{% if a.entorno %}<span class="insignia entorno-{{ a.entorno }}">{{ a.entorno_es }}</span>{% if a.expuesto %} <span class="pequeno tenue">expuesto: pesa más en la prioridad</span>{% endif %}{% else %}<span class="tenue">sin entorno en OCS ni sufijo en el nombre</span>{% endif %}</td></tr>
+            {% if a.proceso %}<tr><th scope="row">Proceso de negocio</th><td>{{ a.proceso }}
+              <div class="pequeno tenue">Sale del campo <span class="mono">TAG</span> de OCS Inventory, que es donde se anota a qué proceso pertenece cada servidor.</div>
+              {%- if a.proceso_mal_escrito %}
+              <div class="pequeno"><span class="insignia medio">Etiqueta mal escrita en OCS Inventory</span>
+                <div class="tenue">En OCS Inventory está escrita «{{ a.etiqueta_ocs }}». La plataforma la agrupa con «{{ a.proceso }}» comparando sin tildes ni mayúsculas, para que no salgan dos procesos donde hay uno; conviene corregirla en OCS Inventory.</div></div>
+              {%- endif %}</td></tr>{% endif %}
+            <tr><th scope="row">Zona de red</th><td>{{ a.zona_es }}</td></tr>
+            <tr><th scope="row">Usuario</th><td>{{ a.usuario or '—' }}</td></tr>
+            <tr><th scope="row">Arquitectura</th><td>{{ a.arquitectura or '—' }}{% if a.arquitectura_del_agente %} <span class="tenue pequeno">(la informa el agente de OCS Inventory en el mismo campo que el tiempo encendido)</span>{% endif %}</td></tr>
+            {% if a.encendido_es %}<tr><th scope="row">Tiempo encendido</th><td>{{ a.encendido_es }} <span class="tenue pequeno">en el momento del último inventario</span></td></tr>{% endif %}
+            <tr><th scope="row">Grupo o dominio</th><td>{{ a.grupo or '—' }}</td></tr>
+            {# «Descripción» solo cuando alguien escribió una de verdad (2026-09-15): en 839
+               de los 885 activos con ese campo, lo que traía era la cadena del agente
+               («x86_64/00-00-17 09:36:09»), que ahora se lee arriba como arquitectura y
+               tiempo encendido. #}
+            {% if a.descripcion_es %}<tr><th scope="row">Descripción</th><td>{{ a.descripcion_es }}</td></tr>{% endif %}
+            <tr><th scope="row">Última conexión del agente</th><td>{{ a.ultima_conexion | fecha_es(con_hora=True) if a.ultima_conexion else '—' }} <span class="tenue pequeno">({{ a.ultima_conexion | hace }})</span></td></tr>
+            <tr><th scope="row">Último inventario</th><td>{{ a.ultimo_inventario | fecha_es(con_hora=True) if a.ultimo_inventario else '—' }} <span class="tenue pequeno">({{ a.ultimo_inventario | hace }})</span></td></tr>
+            <tr><th scope="row">Primera sincronización</th><td>{{ a.primera_vez_at | fecha_es }}</td></tr>
+            <tr><th scope="row">Último cambio de software</th><td>{{ a.cambiado_at | fecha_es if a.cambiado_at else '—' }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" data-tour="5" data-tour-titulo="Hallazgos de política" data-tour-texto="Lo que este activo incumple de la política de la organización: sistema fuera de soporte, software de riesgo o sin agente de protección. No son vulnerabilidades con CVE, son condiciones del activo, y por eso van aparte de las actualizaciones pendientes.">
+    <div class="panel-cabecera">
+      <h2>Hallazgos de política</h2>
+      <span class="sub">Lo que incumple la política de la organización en este activo. No son CVE: son condiciones del activo (sistema sin soporte, software de riesgo, sin agente de protección).</span>
+    </div>
+    <div class="panel-cuerpo">
+      {% if hallazgos %}
+      <ul class="lista-lineas">
+        {% for h in hallazgos %}
+          <li><span class="insignia {% if h.tipo == 'fin_soporte' %}critical{% elif h.tipo == 'software_riesgo' %}high{% else %}medium{% endif %}">{{ h.tipo_es }}</span> {{ h.detalle }} <span class="tenue">· desde {{ h.detectado_at | fecha_es }}</span></li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p class="pequeno suave">Este activo no incumple ninguna política: su sistema tiene soporte, no se le ha detectado software de riesgo y reporta al inventario.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ============================ 3b. nivel de parche de Windows (motor MSRC, v6) #}
+{% include "_windows_parches.html" %}
+
+{% endif %}{# puede_operar_amenazas: ¿le aplica este CVE? #}
+
+{# ========================================= 4. lo que hay que actualizar
+
+   Aquí estaba la tabla «Amenazas evaluadas para este activo»: una fila por CVE y paquete,
+   con los tres veredictos (afectado, no afectado y sin dato) y paginada de veinte en
+   veinte. En el activo 511 de producción eran 182 filas para 69 vulnerabilidades reales, y
+   entre ellas 29 filas de «linux-tools-common» con la misma versión instalada y siete
+   versiones destino distintas.
+
+   El usuario la rechazó dos veces (2026-09-09): «si una vulnerabilidad se repite se cuente
+   solo como una y en esa misma se deje la trazabilidad de las versiones y de la última
+   versión a la que se debe actualizar… que la remediación indique sí o sí la última versión
+   a la que se debe actualizar y no una por una porque entonces estaría contando 3
+   vulnerabilidades y no una sola», y «En amenazas por activo necesito ver solo lo que
+   afecta, no me sirve que me muestre lo que no me afecta, no tiene sentido».
+
+   La sustituye la tabla de ACTUALIZACIONES del parcial de abajo: una entrada por cosa que
+   hay que actualizar (28 en ese activo), con la versión instalada, la última versión a la
+   que hay que actualizar y la cola completa de versiones solicitadas con los CVE que
+   pidieron cada una. Lo que no afecta se resume en una línea en «Hallazgos de política», y
+   la exportación en CSV sigue trayendo todos los veredictos. #}
+
+{# ======================================= 4a. remediaciones del activo (v6) #}
+{% include "_remediaciones_activo.html" %}
+
+{# ============================== 4b. componentes de aplicación (SBOM) y cumplimiento (OpenSCAP)
+
+   Los dos paneles son de trabajo TÉCNICO (importar un inventario de componentes de una
+   aplicación, subir el resultado de una auditoría de configuración) y estaban en medio
+   del camino de lectura de cualquiera, con sus siglas sin explicar y sus órdenes de
+   consola (revisión de claridad del 2026-09-15, punto 8). Ahora van dentro de un
+   desplegable CERRADO, «Para técnicos», con las siglas explicadas la primera vez que se
+   leen: quien busca qué actualizar no se los encuentra, y quien los necesita los abre. #}
+<details class="bloque-tecnico" data-tour="9" data-tour-titulo="Para técnicos" data-tour-texto="Dos herramientas que no hacen falta para el trabajo diario y por eso vienen cerradas: importar el inventario de componentes internos de una aplicación (bibliotecas de Java, Python o Node que OCS Inventory no ve) y subir el resultado de una auditoría de configuración segura del sistema. Ábralo solo si va a usar alguna de las dos.">
+  <summary><strong>Para técnicos</strong>: componentes internos de las aplicaciones y auditoría de configuración segura</summary>
+  <p class="pequeno tenue">Dos comprobaciones que no salen del inventario de OCS Inventory y que hay que aportar
+    desde el propio activo. No hacen falta para saber qué hay que actualizar: eso está más arriba.</p>
+<div class="rejilla c2">
+  <div class="panel" id="sbom">
+    <div class="panel-cabecera">
+      <h2>Componentes internos de las aplicaciones</h2>
+      <span class="sub">Lo que OCS Inventory no ve: las bibliotecas que lleva dentro cada aplicación (Java, Python, Node…).
+        Se aportan con un <abbr title="Software Bill of Materials: lista de todos los componentes y versiones que lleva dentro una aplicación, generada en el propio servidor">inventario de componentes (SBOM)</abbr>
+        en formato <abbr title="CycloneDX: formato abierto de inventario de componentes, el más extendido">CycloneDX</abbr> o
+        <abbr title="Software Package Data Exchange: formato de inventario de componentes normalizado por la Linux Foundation">SPDX</abbr>,
+        en un fichero JSON; cada componente se compara después con
+        <abbr title="Open Source Vulnerabilities: base de datos pública de vulnerabilidades de software libre">OSV.dev</abbr>.</span>
+    </div>
+    <div class="panel-cuerpo">
+      {% if resumen_sbom.componentes %}
+      <div class="rejilla c3">
+        <div class="metrica {% if resumen_sbom.vulnerabilidades %}critico{% else %}neutro{% endif %}"><div class="valor fs-22-b">{{ resumen_sbom.vulnerabilidades | numero }}</div><div class="etiqueta">Vulnerabilidades en componentes</div></div>
+        <div class="metrica"><div class="valor fs-22-b">{{ resumen_sbom.componentes | numero }}</div><div class="etiqueta">Componentes</div></div>
+        <div class="metrica neutro"><div class="valor fs-22-b">{{ resumen_sbom.evaluables | numero }}</div><div class="etiqueta">Evaluables en OSV.dev</div></div>
+      </div>
+      <p class="pequeno suave mt-12">Ficheros: {% for f in resumen_sbom.ficheros %}<span class="mono">{{ f.fichero }}</span> ({{ f.n | numero }} componentes, {{ f.importado_at | hace }}){% if not loop.last %}; {% endif %}{% endfor %}.
+        Las vulnerabilidades aparecen en la tabla de amenazas evaluadas con el motor «SBOM».</p>
+      {% else %}
+      <p class="pequeno suave">Todavía no se ha importado ningún inventario de componentes de este activo.
+        Genérelo en el servidor de la aplicación con una de estas dos órdenes —<span class="mono">syft</span> y
+        <span class="mono">trivy</span> son dos programas libres que recorren la aplicación y escriben la lista de
+        componentes— y suba aquí el fichero que producen:</p>
+      <pre class="mono pequeno orden-larga" tabindex="0">syft /ruta/aplicacion -o cyclonedx-json &gt; aplicacion.cdx.json
+trivy fs --format cyclonedx --output aplicacion.cdx.json /ruta/aplicacion</pre>
+      {% endif %}
+      {% if es_admin %}
+      <form method="post" action="{{ url_for('activos.importar_sbom', activo_id=a.id) }}" enctype="multipart/form-data" class="mt-12">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="campo">
+          <label for="sbom-archivo">Fichero del inventario de componentes (JSON, hasta 40 megabytes)</label>
+          <input type="file" id="sbom-archivo" name="archivo" accept=".json,application/json" required>
+        </div>
+        <button class="btn" type="submit">Importar y evaluar</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="panel" id="openscap">
+    <div class="panel-cabecera">
+      <h2>Auditoría de configuración segura</h2>
+      <span class="sub">Resultado de comparar la configuración del sistema con una guía de configuración segura, usando
+        <abbr title="OpenSCAP: programa libre que comprueba la configuración de un sistema contra una guía de seguridad publicada">OpenSCAP</abbr>.
+        La guía se expresa en un perfil
+        <abbr title="Extensible Configuration Checklist Description Format: formato normalizado en el que se escriben las guías de configuración segura">XCCDF</abbr>
+        con comprobaciones <abbr title="Open Vulnerability and Assessment Language: lenguaje normalizado con el que se escribe cada comprobación concreta sobre el sistema">OVAL</abbr>.
+        No son vulnerabilidades con CVE: son reglas de endurecimiento que el sistema cumple o no.</span>
+    </div>
+    <div class="panel-cuerpo">
+      {% if resumen_scap.perfiles %}
+      {% for pf in resumen_scap.perfiles %}
+      <div class="mb-6"><strong>{{ pf.perfil_corto }}</strong> <span class="tenue pequeno">· evaluado {{ pf.evaluado_at | fecha_es if pf.evaluado_at else 'sin fecha' }} · importado {{ pf.importado_at | hace }}</span></div>
+      {{ graficos.barra_progreso([{"clave": "exito", "nombre": "Cumple", "valor": pf.cumple}, {"clave": "critico", "nombre": "No cumple", "valor": pf.falla}, {"clave": "neutro", "nombre": "Otros", "valor": pf.reglas - pf.cumple - pf.falla}], aria="Cumplimiento del perfil " ~ pf.perfil_corto) }}
+      <p class="pequeno suave mt-8">{{ pf.cumple | numero }} reglas cumplen y {{ pf.falla | numero }} no ({{ pf.falla_alta | numero }} de severidad alta){% if pf.pct is not none %} · {{ graficos.fmt(pf.pct, 1) }} % de cumplimiento{% endif %}.</p>
+      {% endfor %}
+      {% else %}
+      <p class="pequeno suave">Todavía no se ha importado ningún resultado de este activo. Ejecute en él esta orden
+        (<span class="mono">oscap</span> es el programa de OpenSCAP) y suba el fichero de resultados que deja.
+        El bloque se desplaza a lo ancho: la orden es larga.</p>
+      <pre class="mono pequeno orden-larga" tabindex="0">sudo oscap xccdf eval --profile xccdf_org.ssgproject.content_profile_cis_level1_server \
+  --results resultados.xml /usr/share/xml/scap/ssg/content/ssg-ubuntu2404-ds.xml</pre>
+      {% endif %}
+      {% if es_admin %}
+      <form method="post" action="{{ url_for('activos.importar_openscap', activo_id=a.id) }}" enctype="multipart/form-data" class="mt-12">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="campo">
+          <label for="scap-archivo">Fichero de resultados de OpenSCAP, en formato
+            <abbr title="Extensible Configuration Checklist Description Format: el fichero con el resultado regla a regla">XCCDF</abbr> o
+            <abbr title="Asset Reporting Format: el fichero completo, con el resultado y las pruebas que lo respaldan">ARF</abbr>
+            (XML, hasta 40 megabytes)</label>
+          <input type="file" id="scap-archivo" name="archivo" accept=".xml,text/xml,application/xml" required>
+        </div>
+        <button class="btn" type="submit">Importar resultados</button>
+      </form>
+      {% endif %}
+    </div>
+    {% if fallos_scap %}
+    <div class="panel-cuerpo sin-relleno borde-arriba" id="scap-fallos" tabindex="-1" data-zona-viva
+         data-zona-nombre="Reglas de configuración que no se cumplen">
+      <div class="tabla-envoltorio" tabindex="0" role="region"
+           aria-label="Tabla de las reglas de configuración que no se cumplen, con desplazamiento horizontal">
+        <table class="tabla-compacta">
+          <thead><tr><th>Regla que no se cumple</th><th>Severidad</th><th>Resultado</th></tr></thead>
+          <tbody>
+          {% for f in fallos_scap %}
+            <tr><td>{{ f.titulo }}<div class="pequeno tenue mono">{{ f.regla | recortar(80) }}</div></td>
+                <td><span class="insignia {% if f.severidad == 'high' %}critical{% elif f.severidad == 'medium' %}medium{% else %}low{% endif %}">{{ f.severidad_es }}</span></td>
+                <td class="pequeno">{{ f.resultado_es }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {{ paginacion('activos.detalle', dict(args_ficha, activo_id=a.id), pagina_scap, paginas_scap,
+                    total_scap, por_pagina, singular='regla sin cumplir',
+                    plural='reglas sin cumplir', ancla='scap-fallos', zona='scap-fallos',
+                    titulo='Paginación de las reglas que no se cumplen', clave='pagina_scap') }}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+</details>
+
+{# ================================================ 5. software instalado #}
+{# Paso 10 y no 11 (2026-09-15): los dos paneles técnicos que antes eran los pasos 9
+   (componentes internos de las aplicaciones) y 10 (auditoría de configuración segura)
+   comparten ahora un solo desplegable con un solo paso, el 9. Dejar aquí el 11 abría un
+   hueco en el recorrido guiado, y un recorrido que salta del 9 al 11 parece roto. #}
+<div class="panel" data-tour="10" data-tour-titulo="Programas del activo" data-tour-texto="Con su versión, fabricante y la tecnología del inventario a la que corresponden. La búsqueda filtra al escribir.">
+  <div class="panel-cabecera">
+    <h2>Software instalado</h2>
+    <form method="get" class="filtros" action="{{ url_for('activos.detalle', activo_id=a.id) }}" data-filtro-vivo="tabla-software-activo">
+      <div class="campo">
+        <label for="soft">Buscar programa, versión o tecnología</label>
+        <input type="text" id="soft" name="soft" value="{{ soft_q }}" placeholder="curl, chrome, 8.5…">
+      </div>
+      <div class="casilla">
+        <input type="checkbox" id="todo" name="todo" value="1"{% if soft_todo %} checked{% endif %}>
+        <label for="todo">Mostrar también el software sin clasificar</label>
+      </div>
+      <button class="btn pequeno" type="submit">Filtrar</button>
+      {% if soft_q or soft_todo %}<a class="btn pequeno" href="{{ url_for('activos.detalle', activo_id=a.id) }}">Limpiar</a>{% endif %}
+    </form>
+    <span class="sub" id="software">{{ total_software | numero }} programas instalados, {{ mapeado | numero }} clasificados en una tecnología del inventario.
+      {% if not soft_q and not soft_todo %}Se muestran los clasificados; marque la casilla para verlos todos.{% endif %}
+      {% if total_soft_filtro > por_pagina_soft %}Se recorren por páginas de {{ por_pagina_soft }} programas.{% endif %}</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno" id="tabla-software-activo" tabindex="-1" data-zona-viva
+       data-zona-nombre="Software instalado en el activo">
+    {% if software %}
+{#
+      Contenedor con desplazamiento propio y alcanzable con el teclado (2026-09-15).
+      «.tabla-envoltorio» lleva «overflow-x: auto», así que en cuanto la tabla es más
+      ancha que el panel su parte derecha —la columna de los botones de acción— solo se
+      alcanzaba arrastrando con el ratón: medido en la ficha del activo 511, la tabla
+      pide 1.324 píxeles en un hueco de 1.143 a 1.440 de ventana y de 364 a 390. Con
+      «tabindex="0"» el bloque entra en el recorrido del tabulador y se desplaza con las
+      flechas (WCAG 2.1, criterio 2.1.1), y «role="region"» con su etiqueta hace que el
+      lector de pantalla anuncie qué tabla es al llegar.
+    #}
+    <div class="tabla-envoltorio" tabindex="0" role="region"
+         aria-label="Tabla del software instalado en el activo, con desplazamiento horizontal">
+      <table class="tabla-compacta">
+        <thead><tr><th>Programa</th><th>Versión</th><th>Fabricante</th><th>Tecnología del inventario</th><th>Aplicabilidad</th></tr></thead>
+        <tbody>
+        {% for s in software %}
+          <tr>
+            <td>{{ s.nombre }}</td>
+            <td class="mono pequeno">{{ s.version or '—' }}</td>
+            <td class="pequeno tenue">{{ s.fabricante | recortar(30) if s.fabricante else '—' }}</td>
+            <td class="pequeno">
+              {% if s.technology_id %}<a href="{{ url_for('tecnologias.detalle', tec_id=s.technology_id) }}">{{ s.tecnologia }}</a> <span class="insignia {{ s.criticality }}">{{ {'critical': 'Crítica', 'high': 'Alta', 'medium': 'Media', 'low': 'Baja'}.get(s.criticality, s.criticality) }}</span>
+              {% else %}<span class="tenue">sin clasificar</span>{% endif %}
+            </td>
+            <td class="pequeno">{% if s.nombre_norm in paquetes_evaluados %}<span class="insignia ok">evaluado</span>{% else %}<span class="tenue">—</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {{ paginacion('activos.detalle', dict(args_ficha, activo_id=a.id), pagina_soft, paginas_soft,
+                  total_soft_filtro, por_pagina_soft, singular='programa', plural='programas',
+                  ancla='tabla-software-activo', zona='tabla-software-activo', titulo='Paginación del software instalado',
+                  clave='pagina_soft') }}
+    {% else %}
+    <div class="vacio"><p>{% if soft_q %}Ningún programa coincide con «{{ soft_q }}».{% elif total_software %}Ningún programa de este activo está clasificado todavía.{% else %}OCS no ha informado software para este activo.{% endif %}</p>
+      {% if total_software and not soft_todo %}<p class="pequeno">Marque «Mostrar también el software sin clasificar» para ver los {{ total_software | numero }} programas.</p>{% endif %}</div>
+    {% endif %}
+  </div>
+  <div class="panel-pie">
+    La tecnología se asigna con el <a href="{{ url_for('activos.software') }}">mapa de nombres</a>: es lo que permite comparar
+    la versión instalada con los avisos. Para Debian, Ubuntu y FreeBSD la aplicabilidad se evalúa por paquete
+    aunque no esté clasificado.
+  </div>
+</div>
+{% endblock %}

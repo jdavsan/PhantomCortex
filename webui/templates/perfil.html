@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block titulo %}Mi perfil{% endblock %}
+{% block contenido %}
+{#
+  Apartado de perfil (petición del usuario del 2026-09-07): sustituye al botón
+  «Contraseña» de la barra superior. Muestra SOLO los datos del usuario de la sesión:
+  la vista no recibe ningún identificador, así que no hay forma de pedir el perfil de
+  otra persona. Sin style= ni on*= (CSP estricta); todo el JavaScript de los
+  desplegables está en static/app.js mediante data-toggle.
+#}
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Mi perfil" data-tour-texto="Esta es su ficha personal: quién es usted en la plataforma, cuándo entró por última vez, su contraseña y su segundo factor de autenticación. Nadie más ve esta página: cada persona ve la suya.">
+  <div>
+    <h1>Mi perfil</h1>
+    {# Los enlaces a Usuarios y a Correo solo se ofrecen a quien puede abrirlos:
+       con perfil «Solo lectura» esas rutas responden 403, y un enlace que lleva a
+       un error es un callejón sin salida en la primera página que ve alguien nuevo
+       (hallazgo del revisor del 2026-09-07). #}
+    <p>Su cuenta de acceso a esta plataforma. Los datos de la persona (nombre y perfil) los
+       mantiene un administrador
+       {% if persona.rol == 'admin' %}desde <a href="{{ url_for('usuarios.lista') }}">Usuarios</a>;
+       {% else %}desde el apartado de Usuarios, al que solo entran los administradores;
+       {% endif %}
+       la contraseña y el segundo factor los cambia usted aquí.</p>
+  </div>
+</div>
+
+<div class="rejilla c2">
+  <div class="panel" data-tour="2" data-tour-titulo="Quién soy" data-tour-texto="Su nombre, el correo con el que entra, el perfil que tiene (cada perfil tiene un alcance: Administrador, Ciberseguridad, Redes o Mantenimiento; debajo se explica el suyo) y desde cuándo existe la cuenta.">
+    <div class="panel-cabecera"><h2>Quién soy</h2><span class="sub">Identidad con la que trabaja en la plataforma.</span></div>
+    <div class="panel-cuerpo">
+      <dl class="detalle-lista">
+        <dt>Nombre</dt>
+        <dd>
+          {% if persona.nombre %}{{ persona.nombre }}
+          {% else %}{{ persona.correo }}
+            <div class="pequeno txt-medio">Todavía no consta su nombre, así que se muestra el correo.
+              Un administrador puede completarlo
+              {% if persona.rol == 'admin' %}desde <a href="{{ url_for('usuarios.lista') }}">Usuarios</a>.
+              {% else %}desde Usuarios: pídaselo y aparecerá aquí.{% endif %}</div>
+          {% endif %}
+        </dd>
+        <dt>Correo de acceso</dt>
+        <dd>{{ persona.correo }}</dd>
+        <dt>Perfil</dt>
+        <dd>
+          <span class="insignia {% if persona.rol == 'admin' %}info{% else %}neutra{% endif %}">{{ persona.rol_es }}</span>
+          <div class="pequeno suave">{{ rol_alcance_es }}</div>
+        </dd>
+        <dt>Cuenta creada</dt>
+        <dd>{{ persona.creada | fecha_es }} <span class="pequeno suave">({{ persona.creada | hace }})</span></dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="panel" data-tour="3" data-tour-titulo="Mi acceso" data-tour-texto="Cuándo entró por última vez, cuántas sesiones tiene abiertas ahora mismo en cualquier navegador, cuándo cambió la contraseña y cuántos días le quedan antes de tener que renovarla, los intentos fallidos acumulados y si la cuenta está bloqueada por haber fallado demasiadas veces.">
+    <div class="panel-cabecera"><h2>Mi acceso</h2><span class="sub">Estado de la cuenta y último inicio de sesión.</span></div>
+    <div class="panel-cuerpo">
+      <dl class="detalle-lista">
+        <dt>Último inicio de sesión</dt>
+        <dd>
+          {% if persona.ultimo_acceso %}{{ persona.ultimo_acceso | fecha_es(con_hora=True) }}
+            <span class="pequeno suave">({{ persona.ultimo_acceso | hace }})</span>
+          {% else %}<span class="insignia neutra">Sin registro</span>
+            <div class="pequeno suave">Este es su primer acceso: quedará anotado a partir de ahora.</div>
+          {% endif %}
+        </dd>
+        {# La plataforma admite una sola sesión por usuario (2026-09-07), así que aquí
+           siempre se ve 1; el texto lo explica para que nadie lo lea como un error. #}
+        <dt>Sesiones abiertas</dt>
+        <dd>{{ persona.sesiones | numero }}
+          <span class="pequeno suave">{% if persona.sesiones > 1 %}Incluye esta ventana.
+            {% else %}Solo esta ventana.{% endif %}
+            Se admite una sola sesión por usuario: al entrar desde otro navegador
+            o desde otra máquina, esta se cierra sola. La sesión caduca tras
+            {{ persona.sesion_minutos | numero }} minutos sin actividad y, como máximo, dura
+            {{ persona.sesion_maximo_horas | numero }} horas desde que entró.</span></dd>
+        {# Rotación de credenciales (2026-09-08): fecha del último cambio y días que quedan. #}
+        <dt>Último cambio de contraseña</dt>
+        <dd>
+          {% if persona.password_cambiada %}{{ persona.password_cambiada | fecha_es }}
+            <span class="pequeno suave">({{ persona.password_cambiada | hace }})</span>
+          {% else %}<span class="insignia neutra">Sin registro</span>
+            <div class="pequeno suave">Se anotará en cuanto la cambie.</div>
+          {% endif %}
+        </dd>
+        <dt>Caducidad de la contraseña</dt>
+        <dd>
+          {% if persona.password.restantes is none %}
+            <span class="insignia neutra">Sin caducidad</span>
+            <div class="pequeno suave">La política de renovación periódica no está activa.</div>
+          {% elif persona.password.caducada %}
+            <span class="insignia critical">Caducada</span>
+            <div class="pequeno suave">Han pasado más de {{ persona.password.max_dias | numero }} días desde el último cambio: debe cambiarla ahora.</div>
+          {% else %}
+            <span class="insignia {% if persona.password.avisar %}medium{% else %}ok{% endif %}">
+              {% if persona.password.restantes == 1 %}Queda 1 día{% else %}Quedan {{ persona.password.restantes | numero }} días{% endif %}</span>
+            <div class="pequeno suave">Las contraseñas se renuevan cada {{ persona.password.max_dias | numero }} días;
+              {% if persona.password.avisar %}cámbiela ya para no quedarse sin acceso.{% else %}cinco días antes se le avisará al entrar.{% endif %}</div>
+          {% endif %}
+        </dd>
+        <dt>Intentos fallidos</dt>
+        <dd>{% if persona.fallos %}<span class="insignia medium">{{ persona.fallos | numero }}</span>
+            <span class="pequeno suave">Se reinician en cuanto entra correctamente.</span>
+          {% else %}{{ persona.fallos | numero }} <span class="pequeno suave">Ninguno pendiente.</span>{% endif %}</dd>
+        <dt>Cuenta bloqueada</dt>
+        <dd>{% if persona.bloqueada_minutos %}<span class="insignia critical">Sí, quedan {{ persona.bloqueada_texto }}</span>
+          {% else %}<span class="insignia ok">No</span>{% endif %}</dd>
+      </dl>
+    </div>
+    <div class="panel-pie pequeno">
+      Si ve accesos que no reconoce, cambie la contraseña aquí abajo y contacte al administrador.
+    </div>
+  </div>
+</div>
+
+<div class="panel" data-tour="4" data-tour-titulo="Registro de mis accesos" data-tour-texto="Los últimos accesos e intentos registrados en la auditoría de esta cuenta, con la fecha, la hora y la dirección de red de la máquina desde la que se entró. Solo aparecen los suyos.">
+  <div class="panel-cabecera"><h2>Registro de mis accesos</h2><span class="sub">Los {{ accesos_maximo | numero }} más recientes de esta cuenta, del más nuevo al más antiguo.</span></div>
+  <div class="panel-cuerpo sin-relleno">
+    {% if persona.accesos %}
+      <div class="tabla-envoltorio">
+        <table class="tabla-datos">
+          <thead>
+            <tr>
+              <th>Fecha y hora</th>
+              <th>Qué ocurrió</th>
+              <th>Dirección de red (<abbr title="Protocolo de Internet: identifica la máquina desde la que se entró">IP</abbr>)</th>
+              <th>Detalle</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in persona.accesos %}
+              <tr>
+                <td class="nowrap">{{ a.at | fecha_es(con_hora=True) }}
+                  <div class="pequeno suave">{{ a.at | hace }}</div></td>
+                <td><span class="insignia {{ a.insignia }}">{{ a.que }}</span></td>
+                <td class="mono">{% if a.ip %}{{ a.ip }}{% else %}<span class="suave">sin registrar</span>{% endif %}</td>
+                <td class="pequeno">{% if a.detalle %}{{ a.detalle }}{% else %}<span class="suave">—</span>{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="vacio">
+        <p>Todavía no hay accesos registrados en esta cuenta.</p>
+        <p class="pequeno">Aparecerán aquí en cuanto entre otra vez: cada acceso correcto y cada intento fallido deja constancia.</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<div class="rejilla c2">
+  <div class="panel" data-tour="5" data-tour-titulo="Mi contraseña" data-tour-texto="Escriba la contraseña actual y dos veces la nueva. La nueva debe tener al menos doce caracteres, combinar tres de estos cuatro tipos (minúsculas, mayúsculas, dígitos y símbolos) y no repetir ninguna de sus últimas {{ persona.password_historial | numero }} contraseñas{% if persona.password.max_dias %}. Se renueva de forma obligatoria cada {{ persona.password.max_dias | numero }} días{% endif %}.">
+    <div class="panel-cabecera"><h2>Mi contraseña</h2><span class="sub">La de esta plataforma. La del correo se gestiona en Correo.</span></div>
+    <div class="panel-cuerpo">
+      <p class="pequeno suave">Es la contraseña de esta interfaz, no la del correo corporativo:
+         {% if persona.rol == 'admin' %}esa se cambia en <a href="{{ url_for('credenciales.panel') }}">Correo</a>.
+         {% else %}esa la gestiona un administrador en el apartado de Correo.{% endif %}
+         Al guardarla se cierran todas sus sesiones abiertas, también esta, y tendrá que
+         volver a identificarse. Si escribe mal la contraseña actual varias veces, la cuenta
+         se bloquea un rato y queda constancia en la auditoría, igual que en la pantalla de
+         acceso.</p>
+      <form method="post" action="{{ url_for('auth.perfil') }}" autocomplete="off">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="campo">
+          <label for="actual">Contraseña actual</label>
+          <input type="password" id="actual" name="actual" required autocomplete="current-password" maxlength="200">
+        </div>
+        <div class="campo">
+          <label for="nueva">Contraseña nueva</label>
+          <input type="password" id="nueva" name="nueva" required autocomplete="new-password" minlength="12" maxlength="200">
+          <div class="ayuda">Mínimo doce caracteres, combinando al menos tres de:
+            minúsculas, mayúsculas, dígitos y símbolos. No puede ser la que tiene ahora
+            {% if persona.password_historial %}ni ninguna de sus últimas {{ persona.password_historial | numero }} contraseñas{% endif %}.
+            {% if persona.password.max_dias %}Por política de seguridad se renueva cada {{ persona.password.max_dias | numero }} días.{% endif %}</div>
+        </div>
+        <div class="campo">
+          <label for="repetir">Repita la nueva</label>
+          <input type="password" id="repetir" name="repetir" required autocomplete="new-password" minlength="12" maxlength="200">
+        </div>
+        <button class="btn primario" type="submit">Guardar la contraseña</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="panel" data-tour="6" data-tour-titulo="Segundo factor de autenticación" data-tour-texto="Añada una segunda comprobación al entrar: un código de seis dígitos que genera una aplicación en su teléfono. Aquí lo activa, regenera los códigos de recuperación o lo desactiva; para regenerar y para desactivar hacen falta la contraseña y un código.">
+    <div class="panel-cabecera"><h2>Segundo factor de autenticación</h2><span class="sub">Código de seis dígitos de una aplicación del teléfono, además de la contraseña.</span></div>
+    <div class="panel-cuerpo">
+      {% if obligatorio %}
+        <div class="aviso aviso-nivel" role="status">Los administradores deben tener el segundo factor activado. Hasta que lo active, el resto de la plataforma queda bloqueado.</div>
+      {% endif %}
+      {% if segundo_factor.activo %}
+        <dl class="detalle-lista">
+          <dt>Estado</dt>
+          <dd><span class="insignia ok">Activo desde {{ segundo_factor.desde | fecha_es(con_hora=True) }}</span></dd>
+          <dt>Códigos de recuperación</dt>
+          <dd>{{ segundo_factor.restantes | numero }} sin usar{% if segundo_factor.restantes <= 2 %} <span class="insignia medium">quedan pocos</span>{% endif %}</dd>
+        </dl>
+        <div class="mt-12">
+          <button class="btn" type="button" data-toggle="form-regenerar" aria-expanded="false">Regenerar códigos de recuperación</button>
+          <button class="btn peligro-suave" type="button" data-toggle="form-desactivar" aria-expanded="false">Desactivar</button>
+        </div>
+        <form method="post" action="{{ url_for('auth.segundo_factor_codigos') }}" id="form-regenerar" hidden class="mt-12" autocomplete="off"
+              data-confirm="¿Regenerar los códigos de recuperación? Los ocho códigos que tenga guardados dejarán de servir en cuanto se generen los nuevos.">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <p class="pequeno suave">Se generan ocho códigos nuevos y los anteriores dejan de servir. Confirme con su
+             contraseña y con un código actual de la aplicación (o un código de recuperación sin usar): son
+             las mismas comprobaciones que para desactivar el segundo factor.</p>
+          <div class="campo">
+            <label for="password-regenerar">Contraseña actual</label>
+            <input type="password" id="password-regenerar" name="password" required autocomplete="current-password">
+          </div>
+          <div class="campo">
+            <label for="codigo-regenerar">Código de la aplicación o código de recuperación</label>
+            <input type="text" id="codigo-regenerar" name="codigo" required autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="40" class="mono">
+            <div class="ayuda">Seis dígitos de la aplicación, o un código de recuperación con el formato xxxxx-xxxxx.</div>
+          </div>
+          <button class="btn primario" type="submit">Regenerar los códigos</button>
+        </form>
+        <form method="post" action="{{ url_for('auth.segundo_factor_desactivar') }}" id="form-desactivar" hidden class="mt-12" autocomplete="off"
+              data-confirm="¿Desactivar el segundo factor? Su cuenta quedará protegida solo por la contraseña y se cerrarán sus otras sesiones.">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <p class="pequeno suave">Confirme con su contraseña y un código actual de la aplicación (o un código de recuperación).</p>
+          <div class="campo">
+            <label for="password-desactivar">Contraseña actual</label>
+            <input type="password" id="password-desactivar" name="password" required autocomplete="current-password">
+          </div>
+          <div class="campo">
+            <label for="codigo-desactivar">Código de la aplicación o código de recuperación</label>
+            <input type="text" id="codigo-desactivar" name="codigo" required autocomplete="one-time-code" autocapitalize="none" spellcheck="false" maxlength="40" class="mono">
+            <div class="ayuda">Seis dígitos de la aplicación, o un código de recuperación con el formato xxxxx-xxxxx.</div>
+          </div>
+          <button class="btn peligro-suave" type="submit">Desactivar el segundo factor</button>
+        </form>
+      {% else %}
+        <p><span class="insignia neutra">No activado</span></p>
+        <p class="pequeno suave">Necesitará una aplicación de códigos en el teléfono (Microsoft Authenticator, Google Authenticator, Aegis, FreeOTP…).
+           Al activarlo recibirá ocho códigos de recuperación para entrar si pierde el teléfono.</p>
+        <form method="post" action="{{ url_for('auth.segundo_factor_activar') }}" class="inline">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <input type="hidden" name="empezar" value="1">
+          <button class="btn primario" type="submit">Activar</button>
+        </form>
+      {% endif %}
+    </div>
+    <div class="panel-pie pequeno">
+      Si pierde el teléfono y los códigos de recuperación, un administrador puede restablecer su segundo factor desde Usuarios.
+      Los códigos incorrectos se cuentan igual que en el acceso: tras los intentos configurados la cuenta se bloquea temporalmente.
+    </div>
+  </div>
+</div>
+{% endblock %}

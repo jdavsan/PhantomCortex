@@ -1,0 +1,636 @@
+{% extends "base.html" %}
+{% block titulo %}Amenazas{% endblock %}
+{% block contenido %}
+{% from "_paginacion.html" import paginacion %}
+{#
+  Consulta de amenazas (sección 6 «Amenazas» de docs/DISENO_INTERFAZ_2026-09-03.md).
+  Restilizado sin gráficos nuevos: la consulta paginada no tiene agregados.
+  Orden de lectura: 1) filtros, 2) CVE recurrentes (solo en la primera página),
+  3) resultados en tabla con paginación, 4) glosario.
+  Sin style= ni on*=: la CSP no admite nada en línea. Los títulos y nombres
+  proceden de la base de datos y pasan por el autoescape de Jinja.
+#}
+{# Severidad, origen y veredicto se etiquetan con los filtros de filtros.py
+   (severidad_es → «Crítica», origen_es, veredicto_es): una sola fuente de verdad,
+   sin diccionarios locales. #}
+{% set orden_es = {'relevancia': 'relevancia para la organización',
+                   'severidad': 'severidad',
+                   'fecha': 'fecha de detección, las más recientes primero'} %}
+{# namespace: un set dentro de un for no sale del bucle en Jinja #}
+{% set ns = namespace(tec_activa=none) %}
+{% for t in tecnologias if t.slug == filtros.tecnologia_slug %}{% set ns.tec_activa = t %}{% endfor %}
+{% set tec_activa = ns.tec_activa %}
+{% set hay_filtros = filtros.texto or filtros.meses or filtros.severidades
+                     or filtros.tecnologia_slug or filtros.solo_kev or filtros.solo_con_cve %}
+
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Consulta de amenazas" data-tour-texto="Todo el histórico de avisos recolectados, buscable y filtrable. Cada fila es una vulnerabilidad o aviso distinto; el mismo CVE informado por varias fuentes es una sola fila con sus fuentes.">
+  <div>
+    <h1>Consulta de amenazas</h1>
+    {#
+      El recuento de la cabecera y el de la tarjeta «Amenazas registradas» tienen que
+      coincidir (2026-09-15): decían 7.514 y 7.293 porque la lista contaba también la
+      severidad baja, que por regla del equipo no se reporta. Ahora la deja fuera y se
+      dice, para que nadie eche de menos las que faltan.
+    #}
+    <p>Histórico completo de avisos, consultable y filtrable por texto o CVE, periodo, severidad y
+       tecnología del inventario. {{ total | numero }} {% if total == 1 %}amenaza coincide{% else %}amenazas coinciden{% endif %}
+       con el filtro actual{% if filtros.excluir_bajas %}, contando solo las severidades que la
+       organización reporta: crítica, alta y media{% endif %}.</p>
+  </div>
+  <div class="acciones-titulo">
+    <a class="btn" href="{{ url_for('amenazas.tendencias') }}">Ver tendencias</a>
+    <a class="btn primario" href="{{ url_for('amenazas.exportar', **request.args) }}"
+       title="Exporta hasta 5.000 registros con los filtros actuales, en CSV separado por punto y coma">Exportar CSV</a>
+  </div>
+</div>
+
+{# ================================================ 0. cuántas amenazas hay #}
+{#
+  El usuario pidió cifras en este apartado y, sobre todo, saber QUÉ cuenta cada número:
+  «cuántas amenazas en total, si son amenazas por activo o en total o cómo se determina»
+  (2026-09-07). Son tres magnitudes distintas y confundirlas lleva a conclusiones falsas,
+  así que cada una lleva escrito de dónde sale.
+
+  Reescrito el 2026-09-08 con tres reglas, por la queja de que «las amenazas no son claras:
+  en servidores dice 30.827 pero no dice qué son, después dice 485 equipos, pero luego no
+  son servidores»:
+  1) Cada tipo de máquina por su nombre: «servidores» y «equipos de cómputo». «Equipos» a
+     secas está prohibido y «activos» solo se usa cuando la cifra mezcla los dos tipos.
+  2) Cada cifra dice su unidad y, cuando existe, su denominador: «485 de 511 servidores».
+     Sin el denominador la cifra no se puede juzgar ni cotejar con la página de Activos.
+  3) La tabla lleva fila de total, y el total de amenazas distintas NO es la suma de las
+     filas (la misma amenaza está en los dos tipos de máquina): se dice en la propia tabla.
+#}
+{% if cifras %}
+<div class="panel" id="cuantas-amenazas" data-tour="2" data-tour-titulo="Cuántas amenazas hay" data-tour-texto="Tres magnitudes distintas. «Amenazas registradas» son todos los avisos recolectados, incluidos los que no afectan a ninguna máquina nuestra. «Amenazas confirmadas» son las que sí se han confirmado en al menos un activo comparando la versión instalada con la que corrige el fallo. «Vulnerabilidades»: una vulnerabilidad es un CVE en un activo; si afecta a varios paquetes de la misma máquina cuenta una sola vez. Así, el mismo CVE en cien activos son cien vulnerabilidades y una sola amenaza. Cada cifra de máquinas lleva su denominador: los afectados sobre los presentes de ese tipo, para que se pueda juzgar y cotejar con la página de Activos. Las barras reparten esas vulnerabilidades en {{ n_segmentos_es }} segmentos que no se solapan y suman el total: {{ segmentos_es }}.{% if cifras.incluye_bajas %} Hay un segmento más porque el ajuste «Ignorar la severidad baja» está desactivado.{% endif %}">
+  <div class="panel-cabecera">
+    <h2>Cuántas amenazas hay</h2>
+    <form method="get" class="filtros" action="{{ url_for('amenazas.lista') }}" data-filtro-vivo="cifras-amenazas">
+      {% for clave, valor in request.args.items() %}
+        {% if clave not in ('proceso', 'origen', 'pagina') %}<input type="hidden" name="{{ clave }}" value="{{ valor }}">{% endif %}
+      {% endfor %}
+      {% if not alcance_origen %}
+      <div class="campo">
+        <label for="origen-parque">Tipo de activo</label>
+        <select id="origen-parque" name="origen">
+          <option value="">Servidores y equipos de cómputo</option>
+          {% for clave, texto in origenes_parque.items() %}
+          <option value="{{ clave }}"{% if origen_parque == clave %} selected{% endif %}>{{ texto }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      <div class="campo minw-220">
+        <label for="proceso-parque">Proceso de negocio</label>
+        <select id="proceso-parque" name="proceso">
+          <option value="">Todos los procesos</option>
+          {% for pr in procesos_parque %}
+          <option value="{{ pr }}"{% if proceso == pr %} selected{% endif %}>{{ pr }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn pequeno" type="submit">Aplicar</button>
+      {% if proceso or origen_parque %}
+      <a class="btn pequeno" href="{{ url_for('amenazas.lista', **args_sin_parque) }}">Quitar</a>
+      {% endif %}
+    </form>
+    <span class="sub">Tres magnitudes distintas —amenazas registradas, amenazas confirmadas y
+      vulnerabilidades—, cada una con su unidad y con la cifra de referencia que permite juzgarla.
+      El filtro acota lo que se ha confirmado en el parque; el catálogo de avisos no depende de
+      las máquinas que tengamos.</span>
+  </div>
+  <div class="panel-cuerpo" id="cifras-amenazas" tabindex="-1" data-zona-viva
+       data-zona-nombre="Cifras de amenazas">
+    <p class="pequeno">Estas cifras describen <strong>{{ ambito_es }}</strong>:
+      {{ parque.total | numero }} {{ 'activo' if parque.total == 1 else 'activos' }} con
+      inventario presente{% if detalle_parque %} ({{ detalle_parque | join(' y ') }}){% endif %},
+      {{ 'del que' if parque.total == 1 else 'de los que' }}
+      {{ cifras.activos_afectados | numero }}
+      {{ 'tiene' if cifras.activos_afectados == 1 else 'tienen' }} al menos una vulnerabilidad
+      confirmada{% if afectados_por_tipo %} ({{ afectados_por_tipo | join(' y ') }}){% endif %}.
+      {% if proceso or origen_parque %}Los totales salen del mismo inventario de OCS Inventory que
+      la <a href="{{ url_for('activos.lista') }}">página de Activos</a> —los activos presentes—,
+      pero acotados a este filtro: la página de Activos muestra el parque completo, así que sus
+      cifras de cabecera son mayores. Para cotejarlas una a una, quite el filtro.
+      {% else %}Los totales del parque salen del mismo inventario de OCS Inventory que la
+      <a href="{{ url_for('activos.lista') }}">página de Activos</a> —los activos presentes—,
+      así que coinciden con lo que allí se ve y puede cotejarlos.{% endif %}</p>
+    {#
+      Tarjetas de una línea (2026-09-15). Cada una tenía un párrafo de siete a nueve
+      líneas y había que leerlo entero para llegar a la cifra siguiente; ahora dicen la
+      cifra, su nombre y UNA línea, y todo lo demás está en el desplegable «Qué cuenta
+      exactamente cada cifra», igual que hace la página de Remediación.
+    #}
+    <div class="rejilla c4">
+      <div class="panel metrica neutro">
+        <div class="valor fs-22-b">{{ cifras.registradas | numero }}</div>
+        <div class="etiqueta">Amenazas registradas</div>
+        <div class="nota">Avisos recolectados, afecten o no a alguna máquina nuestra.</div>
+      </div>
+      <div class="panel metrica {{ 'critico' if cifras.confirmadas else 'neutro' }}">
+        <div class="valor fs-22-b">{{ cifras.confirmadas | numero }}</div>
+        <div class="etiqueta">Amenazas confirmadas en algún activo</div>
+        <div class="nota">De las {{ cifras.registradas | numero }} registradas, las que sí nos afectan.</div>
+      </div>
+      <div class="panel metrica {{ 'critico' if cifras.vulnerabilidades else 'neutro' }}">
+        <div class="valor fs-22-b">{{ cifras.vulnerabilidades | numero }}</div>
+        <div class="etiqueta">Vulnerabilidades confirmadas</div>
+        <div class="nota">Un CVE en un activo, contado una sola vez por máquina.</div>
+      </div>
+      <div class="panel metrica {{ 'alto' if cifras.activos_afectados else 'neutro' }}">
+        <div class="valor fs-22-b"><a href="{{ url_for('activos.lista', vista='afectados', proceso=proceso or none, origen=origen_parque or none) }}">{{ cifras.activos_afectados | numero }}</a></div>
+        <div class="etiqueta">{{ 'Activo afectado' if cifras.activos_afectados == 1 else 'Activos afectados' }} de {{ parque.total | numero }} {{ 'presente' if parque.total == 1 else 'presentes' }}</div>
+        <div class="nota">Un activo cuenta una vez aunque tenga cien vulnerabilidades.</div>
+      </div>
+    </div>
+
+    <details class="detalle-ayuda mt-12">
+      <summary>Qué cuenta exactamente cada cifra</summary>
+      <div class="pequeno suave mt-8">
+        <p><strong>Amenazas registradas ({{ cifras.registradas | numero }}).</strong>
+          Unidad: amenazas (avisos de seguridad). Todos los avisos recolectados de las
+          fuentes, afecten o no a alguna máquina nuestra, salvo los ya cerrados por
+          seguridad de la información (descartados y falsos positivos){% if not cifras.incluye_bajas %} y
+          salvo los que no se reportan por su severidad{% endif %}. No dependen del parque
+          ni del filtro. {{ cifras.con_cve | numero }} de las
+          {{ cifras.registradas | numero }} tienen identificador CVE.</p>
+        <p><strong>Amenazas confirmadas en algún activo ({{ cifras.confirmadas | numero }}).</strong>
+          Unidad: amenazas distintas, de las {{ cifras.registradas | numero }} registradas.
+          Son las que se han confirmado comparando la versión instalada con la que corrige
+          el fallo.
+          {% if proceso or origen_parque %}{{ cifras.sin_confirmar | numero }} no
+          {{ 'está' if cifras.sin_confirmar == 1 else 'están' }} confirmadas en
+          {{ ambito_es }}; en todo el parque {{ cifras.sin_confirmar_global | numero }} no lo
+          {{ 'está' if cifras.sin_confirmar_global == 1 else 'están' }} en ningún activo.
+          {% else %}{{ cifras.sin_confirmar | numero }} no se
+          {{ 'ha' if cifras.sin_confirmar == 1 else 'han' }} confirmado en ningún activo.{% endif %}</p>
+        <p><strong>Vulnerabilidades confirmadas ({{ cifras.vulnerabilidades | numero }}).</strong>
+          Una vulnerabilidad es un CVE en un activo; si afecta a varios paquetes de la
+          misma máquina cuenta una sola vez. El mismo CVE en cien activos son cien
+          vulnerabilidades y una sola amenaza.
+          {% if cifras.vulnerabilidades_kev %}{{ cifras.vulnerabilidades_kev | numero }} de ellas
+          con explotación activa.{% endif %}
+          {% if cifras.sin_reportar_vulnerabilidades %}
+          <strong>{{ cifras.vulnerabilidades_con_dato | numero }}</strong> están en activos
+          con el inventario al día y
+          <a href="{{ url_for('activos.lista', vista='sin_reportar') }}">{{ cifras.sin_reportar_vulnerabilidades | numero }}
+          en activos que llevan más de {{ cifras.dias_sin_reportar | numero }} días sin reportar</a>:
+          esas se calcularon con el último dato conocido.{% endif %}</p>
+        {#
+          Conciliación con la página de Remediación (2026-09-15). Antes, esta pantalla
+          decía «32.701 vulnerabilidades confirmadas» y Remediación «32.823 pendientes»,
+          y lo pendiente es un subconjunto de lo confirmado: una de las dos mentía. La
+          diferencia son las que siguen en la cola sin fila de evaluación que las
+          confirme hoy, y ahora se dice aquí con su cifra.
+        #}
+        {% if pendientes_sin_confirmar %}
+        <p><strong>Por qué Remediación enseña
+          {{ pendientes_remediacion | numero }} vulnerabilidades pendientes y aquí hay
+          {{ cifras.vulnerabilidades | numero }} confirmadas.</strong>
+          Las {{ cifras.vulnerabilidades | numero }} son las que la evaluación de hoy
+          confirma contra el inventario. A esas,
+          <a href="{{ url_for('remediaciones.lista') }}">Remediación</a> suma
+          {{ pendientes_sin_confirmar | numero }} más que siguen en la cola porque su fila
+          de evaluación desapareció y OCS Inventory no confirma ningún cambio: el paquete
+          sigue instalado con la misma versión, así que no se cierran —nadie ha comprobado
+          que estén corregidas— pero tampoco se pueden dar por confirmadas hoy.
+          {{ cifras.vulnerabilidades | numero }} + {{ pendientes_sin_confirmar | numero }}
+          = {{ pendientes_remediacion | numero }}.</p>
+        {% endif %}
+        <p><strong>{{ 'Activo afectado' if cifras.activos_afectados == 1 else 'Activos afectados' }}
+          ({{ cifras.activos_afectados | numero }} de {{ parque.total | numero }}).</strong>
+          {% if afectados_por_tipo %}{{ afectados_por_tipo | join(' y ') }}
+          con al menos una vulnerabilidad confirmada. {% endif %}Un activo cuenta una vez aunque
+          tenga cien vulnerabilidades.
+          {% if cifras.sin_reportar_afectados %}
+          <strong>{{ cifras.activos_afectados_con_dato | numero }}</strong> reportaron el
+          inventario en los últimos {{ cifras.dias_sin_reportar | numero }} días y
+          <a href="{{ url_for('activos.lista', vista='sin_reportar') }}">{{ cifras.sin_reportar_afectados | numero }} no</a>.
+          De los {{ parque.total | numero }} presentes, {{ cifras.sin_reportar_activos | numero }}
+          llevan más de {{ cifras.dias_sin_reportar | numero }} días sin reportar: mantener el
+          inventario al día es una tarea de Redes.{% endif %}</p>
+      </div>
+    </details>
+
+    {% if cifras.por_origen %}
+    <div class="grafico mt-12">
+      <h3 class="fs-16-b">Vulnerabilidades por tipo de activo</h3>
+      <p class="pequeno suave">Cada barra mide las <strong>vulnerabilidades confirmadas</strong>
+        (un CVE en un activo, contado una sola vez aunque toque varios paquetes) del tipo de
+        máquina, partida en {{ n_segmentos_es }} segmentos:
+        <strong>{{ segmentos_es }}</strong>. Los segmentos no se solapan y suman el total de la
+        barra: una vulnerabilidad tiene una sola severidad, la más alta de los avisos que la
+        declaran.{% if cifras.incluye_bajas %} Hay un segmento más porque el ajuste «Ignorar la
+        severidad baja» está desactivado:
+        {% if cifras.bajas %}{{ cifras.bajas | numero }} de las
+        {{ cifras.vulnerabilidades | numero }} vulnerabilidades de este ámbito
+        {{ 'es baja' if cifras.bajas == 1 else 'son bajas' }}{% else %}ninguna de las
+        {{ cifras.vulnerabilidades | numero }} vulnerabilidades de este ámbito es
+        baja{% endif %}.{% endif %}
+        {% if cifras.sin_severidad %}«Sin severidad conocida»
+        {% if cifras.sin_severidad == 1 %}es 1 vulnerabilidad cuyos avisos no traen
+        severidad: cuenta en el total y se pinta aparte{% else %}son
+        {{ cifras.sin_severidad | numero }} vulnerabilidades cuyos avisos no traen severidad:
+        cuentan en el total y se pintan aparte{% endif %} para que no falte nada en la
+        barra.{% endif %}
+        A la derecha de cada barra: su total
+        de vulnerabilidades, con la unidad escrita, y cuántas máquinas de ese tipo están afectadas
+        de las que hay presentes.</p>
+      {{ graficos.barras_horizontales(
+           barras_origen, ancho=900, unidad=('vulnerabilidad', 'vulnerabilidades'),
+           aria='Vulnerabilidades confirmadas por tipo de activo (servidores y equipos de cómputo), partidas en ' ~ segmentos_es) }}
+      <div class="tabla-envoltorio mt-12">
+        <table class="tabla-compacta">
+          <thead><tr><th>Tipo de activo</th>
+            <th class="num" title="Un CVE en un activo; si afecta a varios paquetes de la misma máquina cuenta una sola vez">Vulnerabilidades</th>
+            <th class="num" title="Amenazas distintas confirmadas en ese tipo de activo; una misma amenaza puede estar en los dos tipos, así que las filas no se suman">Amenazas distintas</th>
+            <th class="num" title="Activos de ese tipo con al menos una vulnerabilidad confirmada, sobre los que hay presentes en el inventario">Afectados de los presentes</th></tr></thead>
+          <tbody>
+          {% for o in cifras.por_origen %}
+            <tr>
+              <td><a href="{{ url_for('amenazas.lista', **dict(args_sin_parque, origen=o.origen, proceso=proceso)) }}">{{ o.origen_es }}</a></td>
+              <td class="num">{{ o.vulnerabilidades | numero }}</td>
+              <td class="num">{{ o.amenazas | numero }}</td>
+              <td class="num nowrap">{{ o.afectados_es }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+          {% if total_origen %}
+          <tfoot>
+            <tr>
+              <td class="nowrap">Total · {{ total_origen.tipos_es }}</td>
+              <td class="num">{{ total_origen.vulnerabilidades | numero }} <span class="pequeno suave">vulnerabilidades</span></td>
+              <td class="num">{{ total_origen.amenazas | numero }} <span class="pequeno suave">amenazas distintas</span>{% if not total_origen.amenazas_es_suma %}
+                <div class="pequeno suave">no es la suma de las filas</div>{% endif %}</td>
+              <td class="num nowrap">{{ total_origen.afectados_es }}</td>
+            </tr>
+          </tfoot>
+          {% endif %}
+        </table>
+      </div>
+      {% if total_origen and not total_origen.amenazas_es_suma %}
+      <p class="pequeno suave mt-12">Las vulnerabilidades y los activos afectados sí se suman
+        entre filas, porque cada activo es de un solo tipo. Las amenazas distintas no: sumar las
+        filas daría {{ total_origen.suma_amenazas | numero }} amenazas, pero solo hay
+        {{ total_origen.amenazas | numero }} distintas, porque una misma amenaza aparece en
+        servidores y en equipos de cómputo y en el total se cuenta una sola vez.</p>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if cifras.por_proceso | length > 1 %}
+    <div class="grafico mt-12">
+      <h3 class="fs-16-b">Vulnerabilidades por proceso</h3>
+      <p class="pequeno suave">Cada barra mide las <strong>vulnerabilidades confirmadas</strong>
+        del proceso, partidas en los mismos {{ n_segmentos_es }} segmentos de arriba
+        ({{ segmentos_es }}). A la derecha de cada barra: su total de
+        vulnerabilidades y de qué tipo son sus máquinas, con los servidores afectados o los
+        equipos de cómputo afectados sobre los que hay de ese tipo en el proceso; si el
+        proceso tiene máquinas de los dos tipos, la nota reparte las máquinas afectadas
+        entre los dos, cada uno con su denominador. La nota siempre cuenta máquinas: las
+        vulnerabilidades son el largo de la barra.</p>
+      {{ graficos.barras_horizontales(
+           barras_proceso, unidad=('vulnerabilidad', 'vulnerabilidades'), ancho=900,
+           aria='Vulnerabilidades confirmadas por proceso, partidas en ' ~ segmentos_es,
+           max_etiqueta=34) }}
+      <p class="pequeno suave mt-12">Un activo sin proceso de negocio asignado se agrupa por su
+        tipo: los equipos de cómputo los mantiene Mantenimiento y un servidor sin proceso es una
+        etiqueta que falta en OCS Inventory. Pulse una barra para acotar estas cifras a ese
+        proceso.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ============================================================== 1. filtros #}
+<div class="panel" data-tour="3" data-tour-titulo="Buscar y acotar" data-tour-texto="Escriba un CVE, una palabra del título o una tecnología y la lista se actualiza al instante, sin pulsar Enter. Los selectores de periodo, severidad, tecnología, estado y orden también actúan solos. Las vistas rápidas son atajos a los filtros más usados.">
+  <div class="panel-cabecera">
+    <h2>Filtros</h2>
+    {% if hay_filtros %}
+    <div class="panel-acciones">
+      <a class="btn pequeno" href="{{ url_for('amenazas.lista') }}">Quitar filtros</a>
+    </div>
+    {% endif %}
+    <span class="sub">Acote la consulta por texto o CVE, periodo, severidad y tecnología. La exportación CSV y la paginación conservan los filtros.</span>
+  </div>
+  <div class="panel-cuerpo">
+    <form method="get" class="filtros" data-filtro-vivo="resultados">
+      <div class="campo flex2-220">
+        <label for="q">Texto o CVE</label>
+        <input type="text" id="q" name="q" value="{{ filtros.texto }}"
+               placeholder="CVE-2026-1234, Moodle, ejecución remota…">
+      </div>
+      <div class="campo">
+        <label for="mes">Periodo</label>
+        <select id="mes" name="mes">
+          <option value="">Todos</option>
+          {% for m in meses_disponibles %}
+            <option value="{{ m }}" {% if m in filtros.meses %}selected{% endif %}>
+              {{ m | mes_es }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="sev">Severidad</label>
+        <select id="sev" name="sev">
+          <option value="">Todas</option>
+          {% for s in severidades %}
+            <option value="{{ s }}" {% if s in filtros.severidades %}selected{% endif %}>
+              {{ s | severidad_es }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="tec">Tecnología</label>
+        <select id="tec" name="tec">
+          <option value="">Todas</option>
+          {% for t in tecnologias %}
+            <option value="{{ t.slug }}" {% if t.slug == filtros.tecnologia_slug %}selected{% endif %}>
+              {{ t.name }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="estado">Estado</label>
+        <select id="estado" name="estado">
+          <option value="abiertas" {% if estado_filtro == 'abiertas' %}selected{% endif %}>Abiertas</option>
+          <option value="todas" {% if estado_filtro == 'todas' %}selected{% endif %}>Todas</option>
+          <option value="cerradas" {% if estado_filtro == 'cerradas' %}selected{% endif %}>Cerradas</option>
+          {% for e in estados %}
+            <option value="{{ e }}" {% if estado_filtro == e %}selected{% endif %}>{{ estado_es[e] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="orden">Orden</label>
+        <select id="orden" name="orden">
+          <option value="relevancia" {% if filtros.orden=='relevancia' %}selected{% endif %}>Relevancia</option>
+          <option value="severidad" {% if filtros.orden=='severidad' %}selected{% endif %}>Severidad</option>
+          <option value="fecha" {% if filtros.orden=='fecha' %}selected{% endif %}>Más recientes</option>
+        </select>
+      </div>
+      <div class="campo minw-auto">
+        <div class="casilla m-0">
+          <input type="checkbox" id="kev" name="kev" value="1" {% if filtros.solo_kev %}checked{% endif %}>
+          <label for="kev" title="Solo amenazas del catálogo de CISA de explotación activa confirmada">Solo <abbr title="Known Exploited Vulnerabilities: catálogo de CISA de vulnerabilidades con explotación activa confirmada">KEV</abbr></label>
+        </div>
+      </div>
+      <div class="campo minw-auto">
+        <div class="casilla m-0">
+          <input type="checkbox" id="cve" name="cve" value="1" {% if filtros.solo_con_cve %}checked{% endif %}>
+          <label for="cve">Solo con CVE</label>
+        </div>
+      </div>
+      <button class="btn primario pequeno" type="submit">Buscar</button>
+      <a class="btn pequeno" href="{{ url_for('amenazas.lista') }}">Limpiar</a>
+    </form>
+    {% set mes_actual = meses_disponibles[0] if meses_disponibles else none %}
+    <div class="chips-rapidos" aria-label="Filtros rápidos">
+      <span class="etiqueta-chips">Vistas rápidas:</span>
+      <a class="chip {% if not hay_filtros and estado_filtro == 'abiertas' %}activo{% endif %}" href="{{ url_for('amenazas.lista') }}">Abiertas</a>
+      <a class="chip critico {% if filtros.severidades == ['Critical'] and not filtros.solo_kev %}activo{% endif %}" href="{{ url_for('amenazas.lista', sev='Critical') }}">Críticas</a>
+      <a class="chip critico {% if filtros.solo_kev %}activo{% endif %}" href="{{ url_for('amenazas.lista', kev=1) }}">Explotación activa (KEV)</a>
+      {% if mes_actual %}<a class="chip {% if filtros.meses == [mes_actual] %}activo{% endif %}" href="{{ url_for('amenazas.lista', mes=mes_actual) }}">Este periodo</a>{% endif %}
+      <a class="chip {% if filtros.orden == 'fecha' and not hay_filtros %}activo{% endif %}" href="{{ url_for('amenazas.lista', orden='fecha') }}">Más recientes</a>
+      <a class="chip {% if estado_filtro == 'cerradas' %}activo{% endif %}" href="{{ url_for('amenazas.lista', estado='cerradas') }}">Cerradas</a>
+      <a class="chip {% if estado_filtro == 'todas' and not hay_filtros %}activo{% endif %}" href="{{ url_for('amenazas.lista', estado='todas') }}">Todas</a>
+    </div>
+    {% if hay_filtros %}
+    <div class="flex-8 mt-12">
+      <span class="pequeno tenue">Filtros activos:</span>
+      {% if filtros.texto %}<span class="chip">Texto: «{{ filtros.texto }}»</span>{% endif %}
+      {% for m in filtros.meses %}<span class="chip">Periodo: {{ m | mes_es }}</span>{% endfor %}
+      {% for s in filtros.severidades %}<span class="chip">Severidad: {{ s | severidad_es }}</span>{% endfor %}
+      {% if filtros.tecnologia_slug %}
+        <span class="chip">Tecnología: {{ tec_activa.name if tec_activa else filtros.tecnologia_slug }}</span>
+      {% endif %}
+      {% if filtros.solo_kev %}<span class="chip">Solo KEV</span>{% endif %}
+      {% if filtros.solo_con_cve %}<span class="chip">Solo con CVE</span>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ========================================== 1b. resultados relacionados #}
+{% if coincidencias and coincidencias.hay_algo %}
+<div class="panel">
+  <div class="panel-cabecera">
+    <h2>Resultados relacionados con «{{ filtros.texto }}»</h2>
+    <span class="sub">El mismo texto también coincide con esto en Activos y Tecnologías: puede
+      que lo que busca no sea una amenaza, sino un equipo o un producto del inventario.</span>
+  </div>
+  <div class="panel-cuerpo">
+    <div class="rejilla c2">
+      {% if coincidencias.activos %}
+      <div>
+        <h3 class="fs-16-b">Activos ({{ coincidencias.activos_total | numero }})</h3>
+        <ul class="lista-lineas">
+          {% for a in coincidencias.activos %}
+          <li><a href="{{ url_for('activos.detalle', activo_id=a.id) }}">{{ a.nombre }}</a>
+            <span class="pequeno tenue">{{ a.ip or 'sin IP' }}</span></li>
+          {% endfor %}
+        </ul>
+        <a class="btn pequeno" href="{{ url_for('activos.lista', q=filtros.texto) }}">Ver
+          {% if coincidencias.activos_total > coincidencias.activos | length %}los {{ coincidencias.activos_total | numero }}{% else %}en{% endif %}
+          Activos</a>
+      </div>
+      {% endif %}
+      {% if coincidencias.tecnologias %}
+      <div>
+        <h3 class="fs-16-b">Tecnologías ({{ coincidencias.tecnologias_total | numero }})</h3>
+        <ul class="lista-lineas">
+          {% for t in coincidencias.tecnologias %}
+          <li><a href="{{ url_for('tecnologias.detalle', tec_id=t.id) }}">{{ t.name }}</a></li>
+          {% endfor %}
+        </ul>
+        <a class="btn pequeno" href="{{ url_for('tecnologias.lista', q=filtros.texto) }}">Ver
+          {% if coincidencias.tecnologias_total > coincidencias.tecnologias | length %}las {{ coincidencias.tecnologias_total | numero }}{% else %}en{% endif %}
+          Tecnologías</a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ============================================================ 2. resultados #}
+<div class="panel" id="resultados" tabindex="-1" data-zona-viva data-zona-nombre="Resultados" data-tour="4" data-tour-titulo="La lista" data-tour-texto="Ordenada por relevancia para la organización (0 a 100). Severidad y CVSS son la gravedad técnica; EPSS la probabilidad de explotación en 30 días; KEV marca explotación activa confirmada; las tecnologías son las del inventario que menciona el aviso, con su versión instalada. Pulse el título para abrir la ficha.">
+  <div class="panel-cabecera">
+    <h2>Resultados</h2>
+    <div class="panel-acciones">
+      <a class="btn pequeno" href="{{ url_for('amenazas.exportar', **request.args) }}">Exportar CSV</a>
+    </div>
+    <span class="sub">{{ total | numero }} en total, ordenadas por {{ orden_es.get(filtros.orden, 'relevancia para la organización') }}
+      {%- if paginas > 1 %} · página {{ pagina | numero }} de {{ paginas | numero }}, {{ por_pagina | numero }} por página{% endif %}.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    {% if resultados %}
+    <div class="tabla-envoltorio">
+      <table>
+        <thead>
+          <tr>
+            <th>Amenaza</th>
+            <th title="Gravedad técnica y de dónde procede el dato (NVD, vector CVSS, KEV o estimación)">Severidad</th>
+            <th class="num" title="Common Vulnerability Scoring System: puntuación oficial de gravedad técnica, de 0 a 10">CVSS</th>
+            <th class="num" title="Exploit Prediction Scoring System: probabilidad (0-100 %) de que la vulnerabilidad se explote en los próximos 30 días">EPSS</th>
+            <th class="num" title="Relevancia para la organización (0-100): combina la gravedad técnica con la criticidad, exposición y versión de las tecnologías afectadas">Relevancia</th>
+            <th title="Tecnologías del inventario que cita el aviso; el color indica el veredicto de la versión instalada">Tecnologías</th>
+            <th title="Mes en que la amenaza se registró por primera vez">Periodo</th>
+            <th title="Estado operativo asignado por el equipo de seguridad de la información; las cerradas no cuentan en alertas ni informes">Estado</th>
+            <th title="Ver activos afectados" class="acciones"><span class="oculto-visual">Acciones</span></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for a in resultados %}
+          {% set n_tec = a.technologies | length %}
+          {% set rel = ((a.relevance or 0) | round(0) | int) %}
+          <tr>
+            <td>
+              <a href="{{ url_for('amenazas.detalle', threat_id=a.id) }}">
+                {{ (a.title_es or a.title_en) | recortar(84) }}
+              </a>
+              <div class="pequeno tenue">
+                {% if a.cve %}<span class="mono">{{ a.cve }}</span>{% else %}sin CVE{% endif %}
+                {% if (a.times_seen or 1) > 1 %} · vista {{ a.times_seen | numero }} veces{% endif %}
+                {% if a.sources %} · {{ a.sources | length | numero }} fuente{{ 's' if a.sources | length != 1 }}{% endif %}
+              </div>
+            </td>
+            <td class="nowrap">
+              <span class="insignia {{ a.severity | lower }}">{{ a.severity | severidad_es }}</span>
+              {% if a.in_kev %}<span class="insignia kev" title="Explotación activa confirmada por CISA">KEV</span>{% endif %}
+              <div class="pequeno tenue">{{ a.severity_source | origen_es }}</div>
+            </td>
+            <td class="num nowrap">
+              {% if a.cvss_score is not none %}{{ graficos.fmt(a.cvss_score, 1) }}
+              {% else %}<span class="pequeno tenue">no disponible</span>{% endif %}
+            </td>
+            <td class="num nowrap">
+              {% if a.epss_score is not none %}{{ graficos.fmt(a.epss_score * 100, 1) }} %
+              {% else %}<span class="pequeno tenue">no disponible</span>{% endif %}
+            </td>
+            <td class="num">
+              <span class="{% if rel >= 75 %}txt-critico-b{% elif rel >= 50 %}txt-alto{% elif rel >= 25 %}txt-medio{% endif %}">{{ rel | numero }}</span>
+            </td>
+            <td>
+              {% if n_tec %}
+              <div class="chips">
+                {% for t in a.technologies[:4] %}
+                  <span class="chip{% if t.version_verdict == 'affected' %} afectada{% elif t.version_verdict == 'not_affected' %} no-afectada{% endif %}"
+                        title="{{ t.name }}{% if t.version_installed %} {{ t.version_installed }}{% endif %} · {{ t.version_verdict | veredicto_es }}">
+                    {{ t.name | recortar(28) }}{% if t.version_installed %} {{ t.version_installed }}{% endif %}
+                  </span>
+                {% endfor %}
+                {% if n_tec > 4 %}
+                  <span class="chip" title="{% for t in a.technologies[4:] %}{{ t.name }}{% if not loop.last %}, {% endif %}{% endfor %}">+{{ (n_tec - 4) | numero }} más</span>
+                {% endif %}
+              </div>
+              {% else %}
+                <span class="pequeno tenue">sin correlación</span>
+              {% endif %}
+            </td>
+            <td class="nowrap pequeno">
+              {{ a.month | mes_es }}
+              <div class="tenue">{{ a.first_seen_at | fecha_es }}</div>
+            </td>
+            <td class="nowrap">
+              <span class="insignia {% if a.estado in ('descartada', 'falso_positivo') %}neutro{% elif a.estado in ('mitigada', 'aceptada') %}ok{% elif a.estado == 'en_analisis' %}info{% else %}acento{% endif %}">{{ a.estado | estado_amenaza_es }}</span>
+              {% if a.alerted_at %}<div class="pequeno tenue">alertada</div>
+              {% elif a.alert_skip_reason %}<div class="pequeno tenue" title="{{ a.alert_skip_reason | motivo_no_alerta_es }}">no alertada</div>{% endif %}
+            </td>
+            <td class="acciones"><button class="btn pequeno ver-activos-btn" type="button" data-threat-id="{{ a.id }}" data-cve="{{ a.cve or 'sin CVE' }}">Ver activos</button></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="vacio">
+      <p>Ningún resultado con estos filtros.</p>
+      <p class="pequeno">Pruebe a ampliar el periodo, quitar la severidad o buscar por otro texto.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  {# Mismo componente que el resto de los listados: recuento en espanol, Primera y
+     Ultima, pagina actual con aria-current y controles de 44 px. #}
+  {{ paginacion('amenazas.lista', request.args.to_dict(flat=false), pagina, paginas,
+                total, por_pagina, singular='amenaza', plural='amenazas',
+                ancla='resultados', zona='resultados',
+                titulo='Paginación de las amenazas') }}
+</div>
+
+{# Modal para mostrar activos afectados #}
+<div id="modal-activos-afectados" class="modal oculto" role="dialog" aria-labelledby="modal-titulo" aria-hidden="true">
+  <div class="modal-contenido modal-ancho">
+    <div class="modal-cabecera">
+      <h2 id="modal-titulo">Activos afectados</h2>
+      <a id="btn-exportar-activos" class="btn primario pequeno" href="#" download>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12m0 0-4-4m4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+        Descargar Excel
+      </a>
+      <button class="btn-cerrar btn-cerrar-modal" aria-label="Cerrar">×</button>
+    </div>
+    <div class="modal-filtros">
+      <input type="search" id="modal-buscar-activos" class="campo-buscar-modal" placeholder="Buscar por nombre, IP o paquete…" autocomplete="off">
+      <span id="modal-contador-activos" class="pequeno tenue"></span>
+    </div>
+    <div class="modal-cuerpo" id="modal-cuerpo-activos">
+      <p class="cargando">Cargando…</p>
+    </div>
+    <div class="modal-paginacion oculto" id="modal-paginacion-activos">
+      <button class="btn pequeno" id="modal-anterior" disabled>← Anterior</button>
+      <span id="modal-info-pagina"></span>
+      <button class="btn pequeno" id="modal-siguiente">Siguiente →</button>
+    </div>
+    <div class="modal-pie">
+      <button class="btn btn-cerrar-modal">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+{# ======================================================= 3. CVE recurrentes #}
+{% if recurrentes %}
+<div class="panel" data-tour="5" data-tour-titulo="Deuda de parcheo" data-tour-texto="Vulnerabilidades que siguen apareciendo mes tras mes en las fuentes: indicio de que no se han corregido. «Ver avisos» muestra todos los avisos de ese CVE.">
+  <div class="panel-cabecera">
+    <h2>CVE presentes en varios periodos</h2>
+    <div class="panel-acciones">
+      <a class="btn pequeno" href="{{ url_for('amenazas.tendencias') }}">Ver en tendencias</a>
+    </div>
+    <span class="sub">¿Qué vulnerabilidades siguen apareciendo mes tras mes? Indicio de deuda de parcheo: los diez CVE más recurrentes.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead>
+          <tr>
+            <th>CVE</th>
+            <th class="num" title="Meses distintos en los que se ha registrado el CVE">Periodos</th>
+            <th class="num" title="Veces que los avisos recolectados han citado este identificador; no son activos afectados ni periodos">Veces citado en avisos</th>
+            <th>Primera vez</th>
+            <th class="acciones"><span class="oculto-visual">Acciones</span></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in recurrentes %}
+          <tr>
+            <td><a class="mono" href="{{ url_for('amenazas.lista', q=r.cve) }}">{{ r.cve }}</a></td>
+            <td class="num"><strong>{{ r.meses | numero }}</strong></td>
+            <td class="num">{{ r.veces | numero }}</td>
+            <td class="nowrap pequeno tenue">{{ r.primera_vez | fecha_es }}</td>
+            <td class="acciones"><a class="btn pequeno" href="{{ url_for('amenazas.lista', q=r.cve, estado='todas') }}#resultados">Ver avisos</a></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ============================================================== 4. glosario #}
+{% include "_glosario.html" %}
+{% endblock %}

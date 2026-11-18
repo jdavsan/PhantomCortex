@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block titulo %}{{ titulo }}{% endblock %}
+{% block contenido %}
+{#
+  Revisión de claridad del 2026-09-15: el número gigante («403») no significa nada para
+  quien lo lee y el título «Acceso inválido» sonaba a culpa. Ahora manda el título en
+  palabras, debajo va qué pasó y cómo seguir, y el número queda al pie, en pequeño, para
+  quien tenga que avisar a administración. Sin siglas.
+#}
+<div class="panel error-caja">
+  <div class="panel-cuerpo centrado p-50-20">
+    <h1 class="fs-18-m8">{{ titulo }}</h1>
+    {% if detalle %}<p class="suave m0auto-56">{{ detalle }}</p>{% endif %}
+    {% if usuario %}
+    <a class="btn" href="{{ url_for('panel.inicio') }}">Volver al panel</a>
+    {% else %}
+    <a class="btn" href="{{ url_for('auth.login') }}">Ir a la pantalla de acceso</a>
+    {% endif %}
+    <p class="pequeno tenue mt-14">Si tiene que avisar de esto, indique el número {{ codigo }}.</p>
+  </div>
+</div>
+{% endblock %}

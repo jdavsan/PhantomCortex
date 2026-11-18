@@ -1,0 +1,108 @@
+{#
+  Paginación reutilizable de los listados largos (2026-09-07, petición del usuario:
+  «cuando se muestre información que sea muy extensa se pueda paginar»).
+
+  Se usa como macro para poder recibir parámetros, que un `include` no permite:
+
+      {% from "_paginacion.html" import paginacion %}
+      {{ paginacion('activos.lista', args, pagina, paginas, total, por_pagina,
+                    singular='activo', plural='activos', ancla='lista-activos') }}
+
+  Argumentos:
+    endpoint    nombre de la vista a la que apuntan los enlaces («activos.lista»).
+    args        argumentos de la consulta que hay que conservar al cambiar de página
+                (los filtros y el orden), SIN «pagina». Admite un diccionario de
+                valores simples o de listas (request.args.to_dict(flat=False)), así
+                que sirve igual para las páginas con un filtro repetido. Los
+                argumentos reservados de `url_for` se descartan aquí mismo (ver
+                abajo), así que se puede pasar la consulta tal como llegó.
+    pagina      página actual, ya validada por la vista (1 … paginas).
+    paginas     número total de páginas (nunca menor que 1).
+    total       número total de filas que cumplen los filtros (recuento del servidor).
+    por_pagina  filas por página.
+    singular / plural   nombre de lo que se lista, para el texto en español.
+    ancla       identificador de la zona del listado, para volver a ella al cambiar
+                de página en lugar de al principio de la página («lista-activos»).
+                Esa zona lleva `tabindex="-1"` en su plantilla para que quien navega
+                con el teclado siga en la tabla y no vuelva al principio del documento.
+    titulo      etiqueta accesible de la navegación.
+    clave       nombre del parámetro de página en la dirección. Por omisión «pagina»;
+                una página con varios listados le da a cada uno el suyo
+                («pagina_reglas», «pagina_tecnologias») para poder avanzar en uno sin
+                perder el sitio en los demás.
+    zona        identificador de la zona viva que hay que sustituir al cambiar de
+                página SIN recargar (2026-09-10). Cuando se pasa, cada enlace lleva
+                `data-enlace-vivo="<zona>"` y el motor de app.js pide la misma
+                dirección y cambia solo ese trozo; sin JavaScript el enlace sigue
+                siendo un enlace normal y la página se recarga como siempre. Solo se
+                pasa cuando la propia paginación está DENTRO del elemento con ese
+                identificador: si estuviera fuera se quedarían a la vista los
+                controles de la página anterior. Contrato completo en
+                docs/INTERACCION_SIN_RECARGA_2026-09-10.md.
+
+  Reglas del proyecto: sin `style=` ni `on*=` (CSP estricta), números en formato
+  español con el filtro `numero` (también en las etiquetas accesibles, que un lector
+  de pantalla lee en voz alta), textos con tilde y sin abreviaturas. Los controles que
+  no llevan a ninguna parte se pintan como botones deshabilitados de verdad
+  (`<button disabled>`, atenuados por la regla `.btn:disabled`) en lugar de
+  desaparecer, para que la fila de controles no cambie de tamaño al navegar y para que
+  un lector de pantalla los anuncie como botones no disponibles; la página actual se
+  marca con `aria-current="page"`.
+
+  Hallazgo del revisor (2026-09-07): los argumentos reservados de `url_for`
+  (`_anchor`, `_method`, `_scheme`, `_external`, `endpoint`, `values`) no son filtros
+  de la página. Si llegan en la dirección («?_anchor=x», «?endpoint=x») y se
+  reenviaran, `url_for` recibiría el mismo argumento dos veces y la página respondería
+  con un error 500. Se filtran en el propio parcial para que ninguna página que lo use
+  pueda romperse por eso, aunque le pase la consulta entera.
+#}
+
+{% macro _paso(endpoint, args, ancla, clave, destino, texto, etiqueta, actual=false, disponible=true, clases='', etiqueta_inactiva='', zona='') %}
+  {%- if not disponible -%}
+    <button type="button" class="btn paginacion-boton{{ ' ' ~ clases if clases }}" disabled
+            aria-label="{{ etiqueta_inactiva or etiqueta }}">{{ texto }}</button>
+  {%- elif actual -%}
+    <span class="btn primario paginacion-boton paginacion-actual{{ ' ' ~ clases if clases }}" aria-current="page"
+          aria-label="{{ etiqueta }}">{{ texto }}</span>
+  {%- else -%}
+    <a class="btn paginacion-boton{{ ' ' ~ clases if clases }}" href="{{ url_for(endpoint, _anchor=ancla, **dict(args, **{clave: destino})) }}"
+       {% if zona %}data-enlace-vivo="{{ zona }}" {% endif %}aria-label="{{ etiqueta }}">{{ texto }}</a>
+  {%- endif -%}
+{% endmacro %}
+
+{% macro paginacion(endpoint, args, pagina, paginas, total, por_pagina,
+                    singular='resultado', plural='resultados', ancla=None,
+                    titulo='Paginación de resultados', clave='pagina', zona='') %}
+{%- set filtros_url = {} -%}
+{%- for nombre_arg, valor_arg in (args or {}).items() -%}
+  {%- if nombre_arg and not nombre_arg.startswith('_') and nombre_arg not in ('endpoint', 'values') -%}
+    {%- set _ = filtros_url.update({nombre_arg: valor_arg}) -%}
+  {%- endif -%}
+{%- endfor -%}
+{% set paginas = [paginas | int, 1] | max %}
+{% set pagina = [[pagina | int, 1] | max, paginas] | min %}
+{% set desde = ((pagina - 1) * por_pagina) + 1 %}
+{% set hasta = [pagina * por_pagina, total] | min %}
+{% set ventana_inicio = [1, pagina - 2] | max %}
+{% set ventana_fin = [paginas, pagina + 2] | min %}
+<nav class="paginacion" aria-label="{{ titulo }}">
+  <span class="actual paginacion-info" data-zona-resumen>{{ total | numero }} {{ singular if total == 1 else plural }} ·
+    página {{ pagina | numero }} de {{ paginas | numero }}{% if total %} · filas {{ desde | numero }} a {{ hasta | numero }}{% endif %}</span>
+  {% if paginas > 1 %}
+  {{ _paso(endpoint, filtros_url, ancla, clave, 1, 'Primera', 'Primera página', disponible=pagina > 1,
+           etiqueta_inactiva='Primera página: ya está en ella', zona=zona) }}
+  {{ _paso(endpoint, filtros_url, ancla, clave, pagina - 1, 'Anterior', 'Página anterior, la ' ~ (pagina - 1) | numero, disponible=pagina > 1,
+           etiqueta_inactiva='Página anterior: ya está en la primera', zona=zona) }}
+  {% if ventana_inicio > 1 %}<span class="tenue paginacion-elipsis"><span aria-hidden="true">…</span><span class="oculto-visual">páginas intermedias omitidas</span></span>{% endif %}
+  {% for n in range(ventana_inicio, ventana_fin + 1) %}
+    {{ _paso(endpoint, filtros_url, ancla, clave, n, n | numero, 'Página ' ~ n | numero ~ ' de ' ~ paginas | numero, actual=(n == pagina),
+             clases='paginacion-numero', zona=zona) }}
+  {% endfor %}
+  {% if ventana_fin < paginas %}<span class="tenue paginacion-elipsis"><span aria-hidden="true">…</span><span class="oculto-visual">páginas intermedias omitidas</span></span>{% endif %}
+  {{ _paso(endpoint, filtros_url, ancla, clave, pagina + 1, 'Siguiente', 'Página siguiente, la ' ~ (pagina + 1) | numero, disponible=pagina < paginas,
+           etiqueta_inactiva='Página siguiente: ya está en la última', zona=zona) }}
+  {{ _paso(endpoint, filtros_url, ancla, clave, paginas, 'Última', 'Última página, la ' ~ paginas | numero, disponible=pagina < paginas,
+           etiqueta_inactiva='Última página: ya está en ella', zona=zona) }}
+  {% endif %}
+</nav>
+{% endmacro %}

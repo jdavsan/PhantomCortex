@@ -1,0 +1,501 @@
+{% extends "base.html" %}
+{% block titulo %}{{ tec.name }}{% endblock %}
+{% block contenido %}
+{# Zona viva (2026-09-10): esta pantalla se actualiza sin recargar. Las acciones
+   marcadas con `data-accion-viva` y los enlaces de esta misma dirección piden la
+   página al servidor y sustituyen solo este trozo, así que no se pierde el sitio
+   ni la posición de desplazamiento. Sin JavaScript todo funciona igual que antes,
+   con recarga. Contrato en docs/INTERACCION_SIN_RECARGA_2026-09-10.md. #}
+<div id="pagina-tecnologia" data-zona-viva data-zona-nombre="Ficha de la tecnología" tabindex="-1">
+{#
+  Ficha de una tecnología (sección 6 «Inventario» de docs/DISENO_INTERFAZ_2026-09-03.md).
+  Orden de lectura: 1) qué pasa ahora (veredictos y aviso de versión),
+  2) cómo evoluciona (dona de veredictos y amenazas por mes), 3) ficha y alias,
+  4) amenazas asociadas en tabla. Sin style= ni on*= (CSP estricta).
+#}
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Ficha de una tecnología" data-tour-texto="Qué versiones hay instaladas, qué amenazas la mencionan y cómo se reconoce en los avisos.">
+  <div>
+    <h1>{{ tec.name }}</h1>
+    {#
+      La versión declarada es la MÁS ANTIGUA de las instaladas: es la que se compara con
+      los avisos (peor caso). Decía «versión instalada 6.0.25.33020» como si fuera LA
+      versión del producto, y ni siquiera encaja con el patrón del resto (2026-09-15).
+    #}
+    {#
+      «en 50 activos, con 12 versiones distintas» (auditoría de tableros del 2026-09-15,
+      punto 2). Decía «en 56 activos» y la tarjeta de la derecha «50 activos» en la misma
+      pantalla: 56 no son activos, son pares (activo, versión). Los activos salen de OCS
+      Inventory y las versiones distintas, de las instalaciones con versión declarada.
+    #}
+    <p>{% if tec.vendor %}{{ tec.vendor }} · {% endif %}{{ tec.categoria_es }}
+       {% if tec.version_installed %} · versión instalada más antigua
+       <span class="mono">{{ tec.version_installed }}</span>
+       {%- if instalaciones and instalaciones.activos %}, en
+       {{ instalaciones.activos | numero }} {{ 'activo' if instalaciones.activos == 1 else 'activos' }},
+       con {{ instalaciones.versiones | numero }}
+       {{ 'versión distinta' if instalaciones.versiones == 1 else 'versiones distintas' }}
+       {%- elif reparto_versiones and reparto_versiones.instalaciones %}, con
+       {{ reparto_versiones.versiones | length | numero }}
+       {{ 'versión distinta' if reparto_versiones.versiones | length == 1 else 'versiones distintas' }}
+       en {{ reparto_versiones.instalaciones | numero }}
+       {{ 'instalación' if reparto_versiones.instalaciones == 1 else 'instalaciones' }}{% endif %}{% endif %}</p>
+  </div>
+  <div class="acciones-titulo">
+    <a class="btn" href="{{ url_for('amenazas.lista', tec=tec.slug) }}">Ver sus amenazas</a>
+    <a class="btn" href="{{ url_for('tecnologias.lista') }}">Volver</a>
+  </div>
+</div>
+
+{# ================================================== 1. qué pasa ahora #}
+<div class="rejilla c4 mb-18" data-tour="2" data-tour-titulo="Indicadores" data-tour-texto="Amenazas con versión afectada, no afectada y sin determinar, y cuántos activos tienen la tecnología según OCS.">
+  {#
+    Rótulos que dicen lo que cuentan (2026-09-15). Decían «Versión afectada 0» y
+    «Versión no afectada 0» y no contaban versiones: contaban AMENAZAS. Con un cero
+    delante, quien leía entendía que la tecnología no tiene ninguna versión afectada,
+    que es justo lo contrario de lo que pasa cuando las 726 amenazas están sin
+    determinar porque falta la versión o el aviso no la precisa.
+  #}
+  {% set n_afectadas = veredictos.get('affected', 0) | int %}
+  {% set n_no_afectadas = veredictos.get('not_affected', 0) | int %}
+  {% set n_sin_determinar = veredictos.get('unknown', 0) | int %}
+  <div class="panel metrica {% if n_afectadas %}critico{% else %}neutro{% endif %}">
+    <div class="valor">{{ n_afectadas | numero }}</div>
+    <div class="etiqueta">{{ 'Amenaza que afecta' if n_afectadas == 1 else 'Amenazas que afectan' }} a la versión instalada</div>
+    <div class="nota">{{ 'Requiere acción' if n_afectadas == 1 else 'Requieren acción' }}</div>
+  </div>
+  <div class="panel metrica {% if n_no_afectadas %}exito{% else %}neutro{% endif %}">
+    <div class="valor">{{ n_no_afectadas | numero }}</div>
+    <div class="etiqueta">{{ 'Amenaza descartada' if n_no_afectadas == 1 else 'Amenazas descartadas' }} por la versión instalada</div>
+    <div class="nota">La versión instalada ya lleva la corrección o queda fuera del rango del aviso</div>
+  </div>
+  <div class="panel metrica {% if n_sin_determinar %}medio{% else %}neutro{% endif %}">
+    <div class="valor">{{ n_sin_determinar | numero }}</div>
+    <div class="etiqueta">{{ 'Amenaza sin determinar' if n_sin_determinar == 1 else 'Amenazas sin determinar' }}</div>
+    <div class="nota">
+      {% if not tec.version_installed %}Falta registrar la versión instalada
+      {% else %}El aviso no especifica qué versiones afecta{% endif %}
+    </div>
+  </div>
+  <div class="panel metrica">
+    <div class="valor">{% if tec.activos_ocs %}<a href="{{ url_for('activos.lista', tec=tec.id) }}">{{ tec.activos_ocs | numero }}</a>{% else %}{{ tec.systems_count or 0 }}{% endif %}</div>
+    <div class="etiqueta">{% if tec.activos_ocs %}Activos con esta tecnología{% else %}Sistemas{% endif %}</div>
+    {# «12 versiónes» era una errata: el plural de «versión» no lleva tilde (2026-09-15). #}
+    {% set n_versiones = instalaciones.versiones if instalaciones and instalaciones.versiones else tec.versiones_ocs_lista | length %}
+    <div class="nota">{% if tec.activos_ocs %}según OCS Inventory{% if alcance_origen %}, en toda la organización (la lista de Activos solo muestra {{ alcance_es }}){% endif %} · {{ n_versiones | numero }} {{ 'versión distinta' if n_versiones == 1 else 'versiones distintas' }}{% else %}exposición {{ tec.exposicion_es | lower }} · criticidad {{ tec.criticidad_es | lower }}{% endif %}</div>
+  </div>
+</div>
+
+{% if not tec.version_installed %}
+<div class="aviso aviso-nivel" role="status">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+  <div><strong>Sin versión registrada.</strong>
+    Todas las amenazas de esta tecnología quedan como «sin determinar». Al indicar
+    la versión, el sistema puede descartar automáticamente los avisos que afectan a
+    versiones anteriores a la instalada.</div>
+</div>
+{% endif %}
+
+{#
+  Versiones que no encajan con el patrón del producto (2026-09-15): en ámbar y con la
+  explicación, nunca presentadas como buenas. La regla es estadística y está escrita en
+  webui/vistas/tecnologias.py (marcar_versiones_atipicas): series mayores minoritarias
+  frente a una serie que reúne a la mitad de los activos.
+#}
+{% if motivo_version_declarada %}
+<div class="aviso aviso-nivel" role="status">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 17h.01"/></svg>
+  <div><strong>La versión declarada <span class="mono">{{ tec.version_installed }}</span> no parece de este producto.</strong>
+    {{ motivo_version_declarada }}
+    <a href="{{ url_for('activos.software') }}">Revisar el mapa de nombres en Software</a>.</div>
+</div>
+{% elif reparto_versiones and reparto_versiones.atipicas %}
+<div class="aviso aviso-nivel" role="status">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 17h.01"/></svg>
+  <div><strong>{{ reparto_versiones.atipicas | numero }}
+    {{ 'versión instalada no encaja' if reparto_versiones.atipicas == 1 else 'versiones instaladas no encajan' }}
+    con el patrón de esta tecnología.</strong>
+    Están marcadas en ámbar en la tabla de versiones, con el motivo de cada una.
+    <a href="{{ url_for('activos.software') }}">Revisar el mapa de nombres en Software</a>.</div>
+</div>
+{% endif %}
+
+{% if tec.versiones_ocs_lista %}
+<div class="panel" data-tour="3" data-tour-titulo="Versiones reales" data-tour-texto="Qué versiones de esta tecnología hay instaladas de verdad, según OCS Inventory, y en cuántos activos cada una. La más antigua es la que se compara con los avisos: si un aviso afecta hasta cierta versión y aquí hay una menor, la amenaza aplica.">
+  <div class="panel-cabecera">
+    <h2>Versiones instaladas según OCS Inventory</h2>
+    <div class="panel-acciones">
+      <a class="btn pequeno" href="{{ url_for('activos.lista', tec=tec.id) }}">Ver los activos</a>
+    </div>
+    <span class="sub">Qué versiones de {{ tec.name }} hay realmente en los {{ tec.activos_ocs | numero }} activos, de la más antigua a la más reciente. La más antigua es la que se compara con los avisos (peor caso). La columna cuenta <strong>instalaciones</strong>: un activo con dos versiones aparece en las dos filas.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    {#
+      Denominador de las barras de la columna «Reparto»: el total de instalaciones CON
+      versión declarada, que es lo que suma la columna. Si la ficha no puede calcularlo
+      (base sin `activo_software`), se usa la suma de las filas que se enseñan.
+    #}
+    {% set reparto_instalaciones = (instalaciones.con_version if instalaciones and instalaciones.con_version
+                                    else (reparto_versiones.instalaciones if reparto_versiones else 0)) %}
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        {#
+          «Instalaciones (activo y versión)», no «Activos»: cada fila cuenta en cuántos
+          activos está ESA versión, y un activo con dos versiones suma en las dos filas,
+          así que la columna no suma activos (auditoría del 2026-09-15, punto 2).
+        #}
+        <thead><tr><th>Versión</th>
+          <th class="num" title="En cuántos activos está instalada esa versión. La columna suma pares (activo, versión): un activo con dos versiones cuenta en las dos filas">Instalaciones (activo y versión)</th>
+          <th class="w-220">Reparto</th></tr></thead>
+        <tbody>
+        {% for v in tec.versiones_ocs_lista %}
+          <tr>
+            <td class="mono">{{ v.version }}
+              {% if v.atipica %}<span class="insignia medio" title="{{ v.motivo }}">no encaja con el patrón</span>
+                <div class="pequeno tenue envolver">{{ v.motivo }}</div>{% endif %}</td>
+            <td class="num">{{ v.activos | numero }}</td>
+            {#
+              El denominador es el total de instalaciones CON versión (56 en Microsoft
+              Windows), no el de activos (50): con 50 la suma de los porcentajes de la
+              columna pasaba del cien por cien.
+            #}
+            {% set base_reparto = reparto_instalaciones if reparto_instalaciones else v.activos %}
+            <td>{{ graficos.barra_progreso([{"clave": "acento", "nombre": v.version, "valor": v.activos}, {"clave": "neutro", "nombre": "Otras versiones", "valor": (base_reparto - v.activos) if base_reparto > v.activos else 0}], leyenda=False, aria=v.version ~ " en " ~ v.activos ~ " de " ~ base_reparto ~ " instalaciones con versión declarada") }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="panel-pie">
+    {#
+      La frase que faltaba (auditoría del 2026-09-15, punto 2): cuántas instalaciones
+      suma la tabla, en cuántos activos y cuántas quedan fuera por no declarar versión.
+      Sin ella, 29 instalaciones de Microsoft Windows desaparecían de la pantalla.
+    #}
+    {% if instalaciones and instalaciones.instalaciones %}
+    <strong>{{ instalaciones.con_version | numero }}
+      {{ 'instalación' if instalaciones.con_version == 1 else 'instalaciones' }}</strong>
+    (activo y versión) en {{ instalaciones.activos | numero }}
+    {{ 'activo' if instalaciones.activos == 1 else 'activos' }}{% if instalaciones.sin_version %};
+    <strong>{{ instalaciones.sin_version | numero }}
+      {{ 'más sin versión declarada' if instalaciones.sin_version == 1 else 'más sin versión declarada' }}</strong>,
+    que no se pueden comparar con ningún aviso{% endif %}.
+    {% if instalaciones.versiones > tec.versiones_ocs_lista | length %}
+    La tabla muestra las {{ tec.versiones_ocs_lista | length | numero }} versiones más
+    antiguas de {{ instalaciones.versiones | numero }}, que son las que deciden el peor caso.
+    {% endif %}
+    {% endif %}
+    Actualizado {{ tec.ocs_actualizado_at | hace }} con la sincronización de OCS Inventory.
+    {% if reparto_versiones and reparto_versiones.dispersa %}Conviven
+      {{ reparto_versiones.series | numero }} series de versiones distintas
+      {% if reparto_versiones.version_extendida %}(la más extendida es
+      <span class="mono">{{ reparto_versiones.version_extendida }}</span>, en
+      {{ reparto_versiones.activos_extendida | numero }}
+      {{ 'activo' if reparto_versiones.activos_extendida == 1 else 'activos' }}){% endif %}:
+      o el parque está muy disperso y conviene unificar, o el mapa de nombres está
+      clasificando aquí programas que no son este producto.
+    {% else %}Si aparecen más de tres o cuatro versiones, hay dispersión: conviene unificar.{% endif %}</div>
+</div>
+{% endif %}
+
+{# ========================================= 2. cuánto y cómo evoluciona #}
+<div class="rejilla uno-dos">
+  <div class="panel" data-tour="4" data-tour-titulo="Afecta o no afecta" data-tour-texto="Cuántas de sus amenazas afectan de verdad a la versión instalada.">
+    <div class="panel-cabecera">
+      <h2>Veredicto de versión</h2>
+      <span class="sub">¿Cuántas de sus {{ total_correlaciones | numero }} amenazas afectan de verdad a la versión instalada? Las «sin determinar» solo se resolverán con la versión registrada y un aviso que la precise.</span>
+    </div>
+    <div class="panel-cuerpo">
+      {{ graficos.dona(graf.veredictos, centro_valor=total_correlaciones, centro_etiqueta="amenazas",
+                       aria="Veredicto de versión de las " ~ total_correlaciones ~ " amenazas correlacionadas con " ~ tec.name) }}
+    </div>
+  </div>
+
+  <div class="panel" data-tour="5" data-tour-titulo="Evolución" data-tour-texto="Amenazas de esta tecnología por mes y severidad.">
+    <div class="panel-cabecera">
+      <h2>Amenazas por mes</h2>
+      <span class="sub">¿Cuándo se han registrado sus amenazas y con qué gravedad? Una barra por mes, apilada por severidad, en orden cronológico.</span>
+    </div>
+    <div class="panel-cuerpo">
+      {#
+        Todas las etiquetas del eje, giradas si no caben (2026-09-15): la gráfica pintaba
+        diez barras y solo seis meses, así que cuatro barras no tenían nombre. Más alto
+        para que el giro no coma el dibujo.
+      #}
+      {{ graficos.barras_apiladas(graf.categorias, graf.series, alto=300, etiquetas_todas=True,
+                                  aria="Amenazas de " ~ tec.name ~ " por mes y severidad") }}
+      <p class="pequeno suave mt-8">Cada barra mide el <strong>Total</strong> de su fila en la
+        tabla de abajo: las mismas amenazas, repartidas en las
+        {{ graf.series | length | numero }} severidades que la plataforma reporta.</p>
+    </div>
+    {% if evolucion %}
+    <div class="panel-cuerpo sin-relleno borde-arriba">
+      <div class="tabla-envoltorio">
+        <table class="tabla-compacta">
+          <thead>
+            <tr>
+              {#
+                La columna «Bajas» desaparece con el ajuste «Ignorar la severidad baja»
+                activo (2026-09-15): era la única de toda la plataforma que nombraba esa
+                severidad, y además hacía que la fila dijera 734 donde la barra de encima
+                medía 726. Ahora la consulta ya no las trae y las dos cifras coinciden.
+              #}
+              <th>Periodo</th><th class="num">Total</th><th class="num">Críticas</th>
+              <th class="num">Altas</th><th class="num">Medias</th>{% if not sin_bajas %}<th class="num">Bajas</th>{% endif %}
+              {% if evolucion | sum(attribute='sin_severidad') %}<th class="num" title="Amenazas cuyos avisos no declaran ninguna severidad: no son bajas y por eso se cuentan aparte">Sin severidad conocida</th>{% endif %}
+            </tr>
+          </thead>
+          <tbody>
+          {% for e in evolucion | reverse %}
+            <tr>
+              <td class="nowrap"><a href="{{ url_for('amenazas.lista', tec=tec.slug, mes=e.month) }}">{{ e.month | mes_es }}</a></td>
+              <td class="num">{{ e.total | numero }}</td>
+              <td class="num {% if e.criticas %}txt-critico{% else %}tenue{% endif %}">{{ e.criticas | numero }}</td>
+              <td class="num {% if e.altas %}txt-alto{% else %}tenue{% endif %}">{{ e.altas | numero }}</td>
+              <td class="num {% if e.medias %}txt-medio{% else %}tenue{% endif %}">{{ e.medias | numero }}</td>
+              {% if not sin_bajas %}<td class="num {% if e.bajas %}txt-bajo{% else %}tenue{% endif %}">{{ e.bajas | numero }}</td>{% endif %}
+              {% if evolucion | sum(attribute='sin_severidad') %}<td class="num {% if e.sin_severidad %}tenue{% else %}tenue{% endif %}">{{ e.sin_severidad | numero }}</td>{% endif %}
+            </tr>
+          {% endfor %}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td class="nowrap">Total de {{ evolucion | length }} {% if evolucion | length == 1 %}periodo{% else %}periodos{% endif %}</td>
+              <td class="num">{{ evolucion | sum(attribute='total') | numero }}</td>
+              <td class="num {% if evolucion | sum(attribute='criticas') %}txt-critico{% else %}tenue{% endif %}">{{ evolucion | sum(attribute='criticas') | numero }}</td>
+              <td class="num {% if evolucion | sum(attribute='altas') %}txt-alto{% else %}tenue{% endif %}">{{ evolucion | sum(attribute='altas') | numero }}</td>
+              <td class="num {% if evolucion | sum(attribute='medias') %}txt-medio{% else %}tenue{% endif %}">{{ evolucion | sum(attribute='medias') | numero }}</td>
+              {% if not sin_bajas %}<td class="num {% if evolucion | sum(attribute='bajas') %}txt-bajo{% else %}tenue{% endif %}">{{ evolucion | sum(attribute='bajas') | numero }}</td>{% endif %}
+              {% if evolucion | sum(attribute='sin_severidad') %}<td class="num tenue">{{ evolucion | sum(attribute='sin_severidad') | numero }}</td>{% endif %}
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="panel-pie">Sin amenazas correlacionadas todavía: la serie se llenará con las próximas recolecciones.</div>
+    {% endif %}
+  </div>
+</div>
+
+{# ========================================= 3. ficha y alias #}
+<div class="rejilla c2">
+  {% if es_admin %}
+  <div class="panel" data-tour="6" data-tour-titulo="Ficha del inventario" data-tour-texto="Datos declarados por el equipo: nombre, fabricante, versión instalada y disponible, categoría, criticidad y exposición. La criticidad y la exposición pesan en la prioridad de cada amenaza de esta tecnología.">
+    <div class="panel-cabecera"><h2>Ficha del inventario</h2></div>
+    <div class="panel-cuerpo">
+      <form method="post" action="{{ url_for('tecnologias.editar', tec_id=tec.id) }}"
+            data-accion-viva="pagina-tecnologia" data-accion-espera="Guardando…" data-accion-tiempo="60000">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="campo-fila">
+          <div class="campo">
+            <label for="name">Nombre</label>
+            <input type="text" id="name" name="name" value="{{ tec.name }}" required>
+          </div>
+          <div class="campo">
+            <label for="vendor">Fabricante</label>
+            <input type="text" id="vendor" name="vendor" value="{{ tec.vendor or '' }}">
+          </div>
+        </div>
+        <div class="campo-fila">
+          <div class="campo">
+            <label for="version_installed">Versión instalada</label>
+            <input type="text" id="version_installed" name="version_installed"
+                   class="mono" value="{{ tec.version_installed or '' }}"
+                   placeholder="15.4">
+          </div>
+          <div class="campo">
+            <label for="version_latest">Versión disponible</label>
+            <input type="text" id="version_latest" name="version_latest"
+                   class="mono" value="{{ tec.version_latest or '' }}">
+          </div>
+        </div>
+        <div class="campo-fila">
+          <div class="campo">
+            <label for="category">Categoría</label>
+            <select id="category" name="category">
+              {% for c in categorias %}<option value="{{ c }}"{% if c==tec.category %} selected{% endif %}>{{ categoria_es(c) }}</option>{% endfor %}
+              {% if tec.category not in categorias %}<option value="{{ tec.category }}" selected>{{ tec.categoria_es }}</option>{% endif %}
+            </select>
+          </div>
+          <div class="campo">
+            <label for="criticality">Criticidad</label>
+            <select id="criticality" name="criticality">
+              {% for c in criticidades %}<option value="{{ c }}"{% if c==tec.criticality %} selected{% endif %}>{{ criticidades_es.get(c, c) }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="campo">
+            <label for="exposure">Exposición</label>
+            <select id="exposure" name="exposure">
+              {% for e in exposiciones %}<option value="{{ e }}"{% if e==tec.exposure %} selected{% endif %}>{{ exposiciones_es.get(e, e) }}</option>{% endfor %}
+            </select>
+          </div>
+          <div class="campo">
+            <label for="systems_count">Número de sistemas</label>
+            <input type="number" id="systems_count" name="systems_count"
+                   value="{{ tec.systems_count or 0 }}" min="0">
+          </div>
+        </div>
+        <div class="campo-fila">
+          <div class="campo">
+            <label for="owner">Responsable</label>
+            <input type="text" id="owner" name="owner" value="{{ tec.owner or '' }}">
+          </div>
+          <div class="campo flex2">
+            <label for="cpe">CPE</label>
+            <input type="text" id="cpe" name="cpe" class="mono" value="{{ tec.cpe or '' }}">
+          </div>
+        </div>
+        <div class="campo">
+          <label for="notes">Notas</label>
+          <textarea id="notes" name="notes">{{ tec.notes or '' }}</textarea>
+        </div>
+        <div class="casilla">
+          <input type="checkbox" id="enabled" name="enabled" value="1"{% if tec.enabled %} checked{% endif %}>
+          <label for="enabled">Incluir en la correlación</label>
+        </div>
+        <button class="btn primario" type="submit">Guardar</button>
+        <span class="float-r">
+          <button class="btn peligro" type="submit"
+                  formaction="{{ url_for('tecnologias.borrar', tec_id=tec.id) }}"
+                  data-confirm="¿Eliminar {{ tec.name }} del inventario? Se perderán {{ total_correlaciones }} correlaciones con amenazas (las amenazas se conservan). Esta acción no se puede deshacer.">
+            Eliminar
+          </button>
+        </span>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="panel" data-tour="7" data-tour-titulo="Cómo se reconoce" data-tour-texto="Palabras o expresiones con las que el sistema detecta la tecnología en los avisos. Un alias de exclusión descarta la coincidencia; el contexto exigido evita falsos positivos en palabras ambiguas.">
+    <div class="panel-cabecera">
+      <h2>Alias de detección</h2>
+      <span class="sub">Cómo se reconoce esta tecnología en los textos de los avisos.</span>
+    </div>
+    <div class="panel-cuerpo sin-relleno">
+      {% if alias %}
+      <div class="tabla-envoltorio">
+        <table class="tabla-compacta">
+          <thead><tr><th>Alias</th><th>Modo</th><th>Contexto exigido</th><th class="acciones"></th></tr></thead>
+          <tbody>
+          {% for a in alias %}
+            <tr>
+              <td class="mono">
+                {{ a.alias }}
+                {% if a.is_exclusion %}<span class="insignia critical">exclusión</span>{% endif %}
+              </td>
+              <td class="pequeno nowrap">{{ a.modo_es }}</td>
+              <td class="pequeno tenue">{{ a.context_required or '—' }}</td>
+              <td class="acciones">
+                {% if es_admin %}
+                <form method="post" action="{{ url_for('tecnologias.alias_borrar', tec_id=tec.id, alias_id=a.id) }}"
+                      data-accion-viva="pagina-tecnologia" data-accion-espera="Borrando…">
+                  <input type="hidden" name="csrf" value="{{ csrf }}">
+                  <button class="btn pequeno" type="submit">Quitar</button>
+                </form>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="vacio"><p>Sin alias.</p><p class="pequeno">No se detectará nada hasta que añada uno.</p></div>
+      {% endif %}
+    </div>
+    {% if es_admin %}
+    <div class="panel-cuerpo borde-arriba">
+      <form method="post" action="{{ url_for('tecnologias.alias_nuevo', tec_id=tec.id) }}"
+            data-accion-viva="pagina-tecnologia" data-accion-espera="Añadiendo…" data-accion-tiempo="60000">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="campo-fila">
+          <div class="campo">
+            <label for="alias">Nuevo alias</label>
+            <input type="text" id="alias" name="alias" required placeholder="postgres">
+          </div>
+          <div class="campo">
+            <label for="match_mode">Modo</label>
+            <select id="match_mode" name="match_mode">
+              {% for m in modos %}<option value="{{ m }}">{{ modos_es.get(m, m) }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="campo">
+          <label for="context_required">Términos de contexto (opcional)</label>
+          <input type="text" id="context_required" name="context_required"
+                 placeholder="microsoft, office">
+          <div class="ayuda">Separados por comas. El alias solo cuenta si además
+            aparece alguno de estos términos. Útil para palabras ambiguas como
+            «Access».</div>
+        </div>
+        <div class="casilla">
+          <input type="checkbox" id="is_exclusion" name="is_exclusion" value="1">
+          <label for="is_exclusion">Es una exclusión
+            <span class="tenue">— si este texto aparece, se descarta la coincidencia</span>
+          </label>
+        </div>
+        <button class="btn" type="submit">Añadir alias</button>
+      </form>
+      <div class="ayuda mt-10">
+        El modo «Palabra completa» exige límites de palabra, de modo que
+        «edge» ya no coincide dentro de «knowledge» ni «java» dentro de
+        «javascript». Ése era el origen de 131 falsos positivos en agosto.
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ================================================= 4. amenazas en tabla #}
+<div class="panel" data-tour="8" data-tour-titulo="Las más recientes" data-tour-texto="Amenazas correlacionadas con esta tecnología y su veredicto de versión.">
+  <div class="panel-cabecera">
+    <h2>Amenazas asociadas</h2>
+    <div class="panel-acciones">
+      <a class="btn pequeno" href="{{ url_for('amenazas.lista', tec=tec.slug) }}">Ver todas</a>
+    </div>
+    <span class="sub">Las {{ amenazas | length }} más recientes y relevantes de las {{ total_correlaciones | numero }} correlacionadas, con el veredicto de versión de cada una.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    {% if amenazas %}
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead>
+          <tr><th>Amenaza</th><th>Severidad</th><th class="num" title="Common Vulnerability Scoring System: puntuación oficial de gravedad técnica, de 0 a 10">CVSS</th>
+              <th>Veredicto de versión</th><th>Periodo</th></tr>
+        </thead>
+        <tbody>
+        {% for a in amenazas %}
+          <tr>
+            <td>
+              <a href="{{ url_for('amenazas.detalle', threat_id=a.id) }}">
+                {{ (a.title_es or a.title_en) | recortar(70) }}
+              </a>
+              {% if a.cve %}<div class="pequeno tenue mono">{{ a.cve }}</div>{% endif %}
+            </td>
+            <td class="nowrap">
+              <span class="insignia {{ a.severity | lower }}">{{ a.severity | severidad_es }}</span>
+              {% if a.in_kev %}<span class="insignia kev" title="Explotación activa confirmada por CISA">KEV</span>{% endif %}
+            </td>
+            <td class="num nowrap">{{ a.cvss_score | cvss_es }}</td>
+            <td class="pequeno">
+              {% if a.version_verdict == 'affected' %}
+                <span class="txt-critico-b">Afectada</span>
+              {% elif a.version_verdict == 'not_affected' %}
+                <span class="txt-exito-b">No afectada</span>
+              {% else %}<span class="tenue">Sin determinar</span>{% endif %}
+              {% if a.version_evidence %}<div class="pequeno tenue">{{ a.version_evidence | recortar(42) }}</div>{% endif %}
+            </td>
+            <td class="nowrap pequeno tenue">{{ a.month | mes_es }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="vacio"><p>Sin amenazas asociadas.</p><p class="pequeno">Aparecerán cuando una recolección correlacione avisos con esta tecnología.</p></div>
+    {% endif %}
+  </div>
+</div>
+</div>{# fin de la zona viva #}
+{% endblock %}

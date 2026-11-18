@@ -1,0 +1,253 @@
+{% extends "base.html" %}
+{% block titulo %}Informes{% endblock %}
+{% block contenido %}
+{# Generador de informes a medida (2026-09-10). La página es una sola dirección con
+   parámetros: así una selección se guarda o se comparte como enlace («Copiar el enlace de
+   este informe») sin necesidad de una tabla en la base. Las plantillas rellenan el
+   formulario y se puede cambiar todo antes de generar, y también se puede empezar de cero sin
+   ninguna plantilla. Solo administradores y el perfil operador SOC llegan aquí
+   (webui/vistas/informes.py). Sin estilos ni scripts en línea: todo el CSS está en estilo.css y
+   el comportamiento (vista previa viva, copiar el enlace) lo pone app.js con atributos data-*;
+   el contrato de la actualización sin recarga está en
+   docs/INTERACCION_SIN_RECARGA_2026-09-10.md. #}
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Informes a medida" data-tour-texto="Aquí se arma el informe que necesite: empiece de cero sin ninguna plantilla o parta de una de las preconfiguradas, ajuste el periodo, el alcance, las severidades y los apartados, y vea en la vista previa —que se actualiza sola, sin recargar— cuántas amenazas y cuántos activos entran y qué apartados va a llevar el documento. Después se descarga en Word. No se envía nada por correo y no queda copia en el servidor; cada informe generado se anota en la auditoría.">
+  <div>
+    <h1>Informes</h1>
+    <p>Cree el informe que necesite: <strong>empiece de cero sin depender de ninguna plantilla</strong>
+       o parta de una de las {{ plantillas | length | numero }} preconfiguradas —entre ellas el
+       <strong>informe ejecutivo del mes</strong>, de diez páginas como máximo, para gerencia—
+       y cambie lo que quiera. La vista previa se actualiza
+       sola conforme elige, sin recargar la pantalla, y le dice cuántas amenazas entran y qué
+       apartados va a llevar el documento antes de descargarlo en formato Word (.docx). Se genera en el
+       momento con los datos actuales de la base y se descarga directamente; no se envía por correo ni
+       queda copia en el servidor. Todos los informes cuentan las tres severidades que se reportan:
+       crítica, alta y media.</p>
+  </div>
+  <div class="acciones-titulo">
+    <a class="btn" href="{{ url_for('amenazas.tendencias') }}">Ver tendencias</a>
+  </div>
+</div>
+
+{# Dos columnas en pantalla ancha (2026-09-10): a la izquierda lo que se elige y a la
+   derecha la vista previa pegada al desplazamiento, para que se vea lo que se está
+   construyendo mientras se marca. Queja literal del usuario: «no veo lo que pedí del
+   apartado de informes, de previsualizar la construcción de informes según lo que yo vaya
+   escogiendo». Antes la vista previa empezaba en el píxel 2.574 del documento y quedaba a
+   casi tres pantallas del formulario. El orden del HTML no cambia (elegir primero, vista
+   previa después), así que con el teclado, con lector de pantalla y en pantalla estrecha
+   —donde las columnas se apilan— se recorre igual que antes. Toda la disposición vive en
+   estilo.css: ni un atributo de estilo en línea, que la CSP estricta no admite. #}
+<div class="disposicion-informe">
+  <div class="columna-informe-formulario">
+
+<div class="panel" data-tour="2" data-tour-titulo="Cómo quiere empezar" data-tour-texto="Dos caminos, los dos completos. «Informe personalizado» empieza de cero: ninguna plantilla, ningún apartado marcado, usted elige todo. Las plantillas son puntos de partida ya armados, del informe mensual completo al informe ejecutivo de diez páginas para gerencia y al de un solo activo; al elegir una se rellena el formulario con sus apartados y sus filtros, y desde ese momento puede cambiar lo que quiera: en cuanto cambie algo, lo que se va a generar pasa a ser un informe personalizado a partir de esa plantilla, y así se dice en la vista previa.">
+  <div class="panel-cabecera">
+    <h2>Cómo quiere empezar</h2>
+    <span class="sub">{{ modo_es }}.</span>
+  </div>
+  <div class="panel-cuerpo">
+    {# Zona viva: elegir un punto de partida no recarga la pantalla, solo repinta estas
+       tarjetas, el formulario y la vista previa. #}
+    <div id="plantillas-informe" data-zona-viva data-zona-nombre="Punto de partida" tabindex="-1">
+    {# La opción sin plantilla va primero, sola y a todo el ancho: es una forma de empezar
+       distinta de las plantillas, no una plantilla más (petición del usuario del
+       2026-09-10: «crear informes completamente personalizados sin depender de una
+       plantilla»). #}
+    <div class="tarjeta-plantilla tarjeta-personalizada mb-18{% if modo != 'plantilla' %} activa{% endif %}">
+      <h3>{{ plantilla_libre.nombre }}</h3>
+      <p class="descripcion">{{ plantilla_libre.descripcion }}</p>
+      <p class="pequeno tenue">Para quién: {{ plantilla_libre.para_quien }}</p>
+      {% if modo == 'libre' %}
+        <span class="insignia ok">En uso</span>
+        <span class="pequeno tenue">No depende de ninguna plantilla: ninguna de las de abajo
+          está en uso.</span>
+      {% elif modo == 'derivado' %}
+        <span class="insignia acento">Ya está personalizando</span>
+        <span class="pequeno tenue">Partió de «{{ plantilla_actual.nombre }}» y la ha cambiado, así
+          que lo que se va a generar es un informe personalizado. Si quiere empezar de cero, sin
+          nada marcado:</span>
+        <a class="btn pequeno" href="{{ url_for('informes.lista', plantilla=plantilla_libre.clave, apartados_enviados=1) }}"
+           data-enlace-vivo="plantillas-informe campos-informe vista-previa-informe">Empezar de cero</a>
+      {% else %}
+        <a class="btn pequeno primario" href="{{ url_for('informes.lista', plantilla=plantilla_libre.clave, apartados_enviados=1) }}"
+           data-enlace-vivo="plantillas-informe campos-informe vista-previa-informe">Empezar de cero, sin plantilla</a>
+      {% endif %}
+    </div>
+
+    <h3>Plantillas preconfiguradas</h3>
+    <p class="ayuda">O parta de uno de estos puntos ya armados. La plantilla es un punto de
+      partida, no una jaula: puede cambiar el periodo, el alcance, las severidades y los apartados
+      que quiera, y en cuanto cambie algo lo que se va a generar pasa a ser un informe
+      personalizado a partir de ella.</p>
+    <div class="rejilla c3 plantillas-informe">
+      {% for p in plantillas %}
+      <div class="tarjeta-plantilla{% if p.clave == sel.plantilla and modo != 'libre' %} activa{% endif %}">
+        <h3>{{ p.nombre }}</h3>
+        <p class="descripcion">{{ p.descripcion }}</p>
+        <p class="pequeno tenue">Para quién: {{ p.para_quien }}</p>
+        <p class="pequeno tenue">{{ p.apartados | length | numero }}
+          {% if p.apartados | length == 1 %}apartado{% else %}apartados{% endif %} ·
+          periodo: {{ clases_periodo[p.periodo] | lower }} ·
+          alcance: {{ alcances[p.alcance] | lower }}</p>
+        {% if p.clave == sel.plantilla and modo == 'plantilla' %}
+          <span class="insignia ok">En uso</span>
+        {% elif p.clave == sel.plantilla and modo == 'derivado' %}
+          <span class="insignia acento">Punto de partida, ya modificado</span>
+          <a class="btn pequeno" href="{{ url_for('informes.lista', plantilla=p.clave) }}"
+             data-enlace-vivo="plantillas-informe campos-informe vista-previa-informe">Volver a la plantilla sin cambios</a>
+        {% else %}
+          <a class="btn pequeno" href="{{ url_for('informes.lista', plantilla=p.clave) }}"
+             data-enlace-vivo="plantillas-informe campos-informe vista-previa-informe">Usar esta plantilla</a>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    </div>
+  </div>
+</div>
+
+<div class="panel" data-tour="3" data-tour-titulo="Qué informe quiere" data-tour-texto="El formulario decide el contenido del documento: el periodo (un mes, un trimestre, un semestre, un año completo, un intervalo de fechas o los últimos días), de qué parte de la organización habla, qué severidades entran y qué apartados se escriben. La vista previa se actualiza sola con cada cambio, sin recargar la pantalla y sin perder nada de lo que haya escrito: en pantalla ancha la tiene al lado, a la derecha, y acompaña el desplazamiento mientras marca; en pantalla estrecha queda justo debajo de este formulario.">
+  <div class="panel-cabecera">
+    <h2>Qué informe quiere</h2>
+    <span class="sub">Cada cambio actualiza al momento la vista previa: en pantalla ancha la tiene
+      al lado, a la derecha, y en pantalla estrecha justo debajo. Nada se guarda: la selección viaja
+      en la dirección de esta página, así que puede guardarla como enlace.</span>
+  </div>
+  <div class="panel-cuerpo">
+    {# data-filtro-vivo: al cambiar cualquier control se vuelve a pedir la vista previa al
+       servidor y se sustituye sola, sin recargar. data-vivo-fragmento apunta a la
+       dirección que devuelve solo los dos trozos (no la página entera, que costaba entre
+       200 y 450 milisegundos por la tabla de meses). El retardo de gracia evita una
+       consulta por pulsación al escribir el título o la nota. Sin JavaScript nada de esto
+       existe: queda el botón «Actualizar la vista previa» de siempre. #}
+    <form method="get" action="{{ url_for('informes.lista') }}" class="formulario-informe"
+          data-filtro-vivo="vista-previa-informe"
+          data-vivo-fragmento="{{ url_for('informes.vista_previa') }}"
+          data-filtro-vivo-retardo="300">
+      {% include "_informe_campos.html" %}
+
+      <div class="acciones-formulario">
+        <button class="btn primario" type="submit">Actualizar la vista previa</button>
+        <a class="btn" href="{{ url_for('informes.lista', plantilla=sel.plantilla) }}"
+           data-enlace-vivo="plantillas-informe campos-informe vista-previa-informe">Volver a la plantilla</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+  </div>{# fin de la columna de la izquierda: lo que se elige #}
+
+  <div class="columna-informe-resumen">
+<div class="panel" data-tour="4" data-tour-titulo="Vista previa y descarga" data-tour-texto="Acompaña el desplazamiento a la derecha del formulario (debajo, en pantallas estrechas) y se actualiza sola conforme elige: cuántas amenazas entran y con qué gravedad, cuántos activos afectados sobre los presentes del alcance, cuántas se están explotando ahora mismo, cuántas actualizaciones pendientes trae la cola, el esquema del documento con su numeración real y una estimación de páginas, tamaño y tiempo. Si la selección no devuelve nada, se dice aquí y el botón de generar queda deshabilitado con la razón. El botón «Copiar el enlace de este informe» guarda esta misma selección para volver a usarla o compartirla.">
+  <div class="panel-cabecera">
+    <h2>Vista previa y descarga</h2>
+    <span class="sub">Lo que va a contener el documento, en cifras y en esquema, antes de generarlo.</span>
+  </div>
+  {% include "_informe_vista_previa.html" %}
+</div>
+  </div>{# fin de la columna pegada: lo que se está construyendo #}
+</div>
+
+<div class="panel" data-tour="5" data-tour-titulo="Meses disponibles" data-tour-texto="Atajo para el informe mensual completo: una fila por cada mes con amenazas registradas, con cuántas amenazas reportables tiene y si el informe ya se generó antes. El documento es idéntico al que la ejecución programada envía por correo el último día del mes.">
+  <div class="panel-cabecera">
+    <h2>Meses disponibles</h2>
+    <span class="sub">Descarga rápida del informe mensual completo, sin pasar por el formulario:
+      {{ total_meses | numero }} {% if total_meses == 1 %}mes{% else %}meses{% endif %} con amenazas
+      registradas. Las cifras cuentan amenazas
+      {% if sin_bajas %}críticas, altas y medias{% else %}de todas las severidades{% endif %},
+      igual que el propio informe.</span>
+  </div>
+  {% if filas %}
+  <div class="panel-cuerpo sin-relleno">
+    <div class="tabla-envoltorio">
+      <table class="tabla-informes">
+        <thead>
+          <tr>
+            <th>Mes</th>
+            <th class="num">Amenazas</th>
+            <th>Desglose por severidad</th>
+            <th>Generado antes</th>
+            <th>Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for f in filas %}
+          <tr>
+            <td class="nowrap"><a href="{{ url_for('amenazas.lista', mes=f.mes) }}">{{ f.nombre }}</a></td>
+            <td class="num"><strong>{{ f.total | numero }}</strong> {% if f.total == 1 %}amenaza{% else %}amenazas{% endif %}</td>
+            <td class="nowrap">
+              <span class="{{ 'txt-critico' if f.criticas else 'tenue' }}">{{ f.criticas | numero }} {% if f.criticas == 1 %}crítica{% else %}críticas{% endif %}</span> ·
+              <span class="{{ 'txt-alto' if f.altas else 'tenue' }}">{{ f.altas | numero }} {% if f.altas == 1 %}alta{% else %}altas{% endif %}</span> ·
+              <span class="{{ 'txt-medio' if f.medias else 'tenue' }}">{{ f.medias | numero }} {% if f.medias == 1 %}media{% else %}medias{% endif %}</span>
+              {% if f.en_kev %}· <span class="insignia kev" title="Amenazas del mes en el catálogo KEV de CISA (explotación activa confirmada)">{{ f.en_kev | numero }} en KEV</span>{% endif %}
+            </td>
+            <td>
+              {% if f.generado %}
+                <span class="insignia ok">Sí</span>
+                <span class="pequeno tenue">{{ f.generado.at | hace }} por {{ f.generado.username }}{% if f.generado.veces > 1 %} ({{ f.generado.veces | numero }} veces){% endif %}</span>
+              {% elif f.programado %}
+                <span class="insignia ok">Sí</span>
+                <span class="pequeno tenue">por la ejecución mensual programada</span>
+              {% else %}
+                <span class="insignia neutra">Todavía no</span>
+              {% endif %}
+            </td>
+            <td class="accion-informe">
+              <form method="post" action="{{ url_for('informes.descargar', mes=f.mes) }}">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <button class="btn primario btn-informe" type="submit" aria-label="Generar y descargar el informe de {{ f.nombre }} ({{ f.fichero }})" title="Descarga {{ f.fichero }}">Generar y descargar</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="panel-pie">
+    El fichero se llama <span class="mono">informe_amenazas_AAAA-MM.docx</span> y se abre con Microsoft Word o
+    LibreOffice. Generarlo tarda unos segundos porque recorre todas las amenazas del mes y los activos afectados.
+    El párrafo del resumen ejecutivo se redacta con la plantilla de la plataforma, no con el modelo de lenguaje
+    local: el modelo tarda minutos y la descarga no puede esperar tanto. El informe que llega por correo el último
+    día del mes sí lleva la redacción del modelo cuando está disponible; las cifras son las mismas.
+  </div>
+  {% else %}
+  <div class="panel-cuerpo sin-relleno">
+    <div class="vacio">
+      <p>Todavía no hay amenazas registradas, así que no hay ningún mes del que generar informe.</p>
+      <p class="pequeno">La lista se llenará con la primera ejecución diaria que registre amenazas.</p>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="panel" data-tour="6" data-tour-titulo="Qué contiene el informe" data-tour-texto="Resumen de lo que escribe cada apartado, para saber qué se está descargando antes de abrirlo. El documento es Word (.docx) y se abre con Microsoft Word o con LibreOffice; el índice se actualiza con Ctrl+E y F9.">
+  <div class="panel-cabecera">
+    <h2>Qué contiene el informe</h2>
+    <span class="sub">Para saber qué se está descargando antes de abrirlo.</span>
+  </div>
+  <div class="panel-cuerpo">
+    <ul class="lista-lineas">
+      {% for a in apartados_catalogo %}
+      <li><strong>{{ a.titulo }}</strong>: {{ a.descripcion }}</li>
+      {% endfor %}
+    </ul>
+    <h3>El informe ejecutivo del mes, aparte</h3>
+    <p class="ayuda">La plantilla «{{ plantillas | selectattr('clave', 'equalto', 'ejecutivo') | map(attribute='nombre') | first }}»
+      no usa estos apartados: es un documento propio, de estructura fija y de
+      <strong>diez páginas como máximo</strong>, pensado para gerencia. Estos son sus apartados:</p>
+    <ul class="lista-lineas">
+      {% for a in apartados_ejecutivo %}
+      <li><strong>{{ a.titulo }}</strong>: {{ a.descripcion }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="panel-pie">
+    El documento se construye en memoria y viaja directamente al navegador: no queda ninguna copia en el
+    servidor. Las fichas detalladas se limitan a {{ max_fichas | numero }} amenazas por documento,
+    las de mayor prioridad, para que un informe siga siendo legible y la descarga no se agote por tiempo.
+    Cada informe generado queda anotado en la auditoría con la persona que lo pidió, la plantilla, el periodo,
+    el alcance y los apartados.
+  </div>
+</div>
+{% endblock %}

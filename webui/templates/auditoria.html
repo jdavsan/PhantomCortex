@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block titulo %}Auditoría{% endblock %}
+{% block contenido %}
+{% from "_paginacion.html" import paginacion %}
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Registro de auditoría" data-tour-texto="Quién hizo qué y cuándo: accesos, cambios de ajustes, inventario, usuarios y credenciales. Sirve para acreditar el ciclo de gestión ante una revisión.">
+  <div>
+    <h1>Registro de auditoría</h1>
+    <p>Toda acción de escritura queda registrada: quién, qué, cuándo y desde dónde.
+       {{ total | numero }} entrada{% if total != 1 %}s{% endif %}.</p>
+  </div>
+</div>
+<div class="panel" data-tour="2" data-tour-titulo="El registro" data-tour-texto="Una fila por acción, la más reciente primero: cuándo, quién, qué hizo, sobre qué elemento y desde qué dirección. Los detalles guardan el valor anterior y el nuevo cuando aplica. Al cambiar de página solo se recarga esta tabla, no la pantalla entera.">
+  {# Zona viva (2026-09-10): la tabla y su paginación se sustituyen solas al cambiar
+     de página, sin recargar la pantalla. El identificador es único en la página y
+     `tabindex="-1"` permite devolver aquí el foco de quien navega con el teclado.
+     Sin JavaScript los enlaces de paginación funcionan igual que siempre. #}
+  <div id="registro-auditoria" data-zona-viva data-zona-nombre="Registro de auditoría" tabindex="-1">
+  <div class="panel-cuerpo sin-relleno">
+    {% if filas %}
+    <div class="tabla-envoltorio">
+      <table>
+        <thead>
+          <tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Entidad</th>
+              <th>Detalle</th><th>Origen</th></tr>
+        </thead>
+        <tbody>
+        {% for f in filas %}
+          <tr>
+            <td class="nowrap pequeno">{{ f.at | fecha_corta }}</td>
+            <td class="nowrap">{{ f.username or '—' }}</td>
+            {# Revisión de claridad del 2026-09-15: la columna enseñaba el código interno
+               («login.2fa.ok»). Ahora se lee la frase en español y el código original
+               queda en el título emergente, que es lo que sirve para buscar en los
+               registros del servidor. #}
+            <td>
+              <span class="insignia {% if 'fallo' in f.action %}critical
+                {%- elif 'borrar' in f.action or 'eliminar' in f.action %}high{% else %}neutra{% endif %}"
+                title="{{ f.action }}">
+                {{ f.action | accion_es }}
+              </span>
+            </td>
+            <td class="pequeno">{% if f.entity %}{{ f.entity | entidad_es(f.entity_id) }}{% else %}—{% endif %}</td>
+            <td class="pequeno">{{ (f.detail or '—') | detalle_es | recortar(80) }}</td>
+            <td class="nowrap pequeno mono tenue">{{ f.ip or '—' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="vacio"><p>Sin entradas de auditoría.</p></div>
+    {% endif %}
+  </div>
+  {# Mismo componente que el resto de los listados: antes esta pagina solo tenia
+     Anterior y Siguiente, sin Primera, Ultima, recuento ni aria-current. #}
+  {% set paginas = ((total - 1) // por_pagina) + 1 if total else 1 %}
+  {{ paginacion('panel.auditoria', request.args.to_dict(flat=false), pagina, paginas,
+                total, por_pagina, singular='entrada', plural='entradas',
+                ancla='registro-auditoria', zona='registro-auditoria',
+                titulo='Paginación del registro de auditoría') }}
+  </div>
+</div>
+{% endblock %}

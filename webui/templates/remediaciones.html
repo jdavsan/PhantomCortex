@@ -1,0 +1,939 @@
+{% extends "base.html" %}
+{% block titulo %}Remediación{% endblock %}
+{% block contenido %}
+{% from "_paginacion.html" import paginacion %}
+{#
+  Seguimiento de remediación con cierre automático, en dos vistas de lo mismo:
+
+  «Por actualización» (la de omisión, 2026-09-08): una fila por activo y paquete, con la
+  versión objetivo —la MÁS ALTA de las que piden los avisos— y, al desplegarla, la
+  trazabilidad: qué versión pedía cada CVE. El usuario lo pidió así: «si hay una
+  vulnerabilidad de kernel que se repite que se cuente como una y se vea como la
+  trazabilidad de las versiones a las que se solicita actualizar».
+
+  «Por vulnerabilidad»: el listado por activo, CVE y paquete de siempre, necesario para
+  investigar un CVE concreto.
+
+  Las dos ofrecen a Redes las dos acciones que puede hacer (pedir la
+  comprobación y documentar), que antes solo estaban en la ficha del activo.
+
+  Sin style= ni on*= (CSP estricta). El despliegue de la trazabilidad y del formulario de
+  notas es <details>/<summary>: HTML puro, ni una línea de JavaScript.
+#}
+{% set n_pagina = (grupos | length) if agrupada else (filas | length) %}
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Seguimiento de remediación" data-tour-texto="Cada vulnerabilidad confirmada en un activo abre una remediación pendiente, y varias de ellas se resuelven con una sola actualización del mismo paquete: la vista «Por actualización» las cuenta como una y muestra a qué versión hay que subir. Nadie cierra nada a mano: se cierra solo cuando la siguiente sincronización con OCS Inventory ve instalada la versión corregida, o el paquete desinstalado; en las máquinas con Windows, cuando los boletines de Microsoft dejan de señalar el CVE en la compilación instalada.">
+  <div>
+    <h1>Remediación{% if alcance_origen %} · {{ alcance_es }}{% endif %}</h1>
+    <p>{% if alcance_origen %}Solo {{ alcance_es }}: su perfil no ve el otro tipo de máquina. {% endif %}Qué hay que actualizar, en qué activo y a qué versión. Una misma actualización puede resolver muchas vulnerabilidades: el listado agrupa en una sola fila los paquetes del mismo origen que tienen la misma versión instalada y piden lo mismo, y conserva la trazabilidad de la versión que pedía cada aviso. Si un activo tiene instaladas a la vez dos versiones del mismo paquete —lo habitual con las imágenes del núcleo— salen en dos filas, y cada una avisa de que la misma orden resuelve las dos. Las remediaciones se cierran solas cuando OCS Inventory ve la corrección; la fecha de corrección es la de la sincronización que la vio.</p>
+  </div>
+  <div class="acciones-titulo">
+    <a class="btn" href="{{ url_for('remediaciones.exportar', estado=filtros.estado, proceso=filtros.proceso or None, q=filtros.q or None, severidad=filtros.severidad if filtros.severidad != 'todas' else None) }}">Exportar CSV por vulnerabilidad</a>
+    <a class="btn" href="{{ url_for('activos.lista') }}">Ver activos</a>
+  </div>
+</div>
+
+{# ========================================= 1. indicadores
+   Las dos magnitudes se dicen por separado y con su nombre: ACTUALIZACIONES pendientes
+   (la unidad de trabajo) y VULNERABILIDADES que cubren (la unidad de riesgo). Mezclarlas
+   era lo que hacía que 47.526 filas parecieran 47.526 trabajos cuando son 19.284. #}
+<div class="rejilla c5 mb-18" data-tour="2" data-tour-titulo="Indicadores" data-tour-texto="Cuántas actualizaciones siguen pendientes (una por activo y origen de paquete: los binarios que salen del mismo paquete fuente, como linux-image, linux-headers y linux-modules del núcleo, tienen la misma versión y las mismas vulnerabilidades, así que una sola orden los resuelve y cuentan como una), cuántas vulnerabilidades distintas siguen pendientes (una por activo y CVE, aunque el aviso obligue a actualizar varios paquetes), cuántas remediaciones se corrigieron en el periodo, cuántos días pasaron de media entre detectar la vulnerabilidad y verla corregida, y en cuántos activos queda algo pendiente.">
+  <div class="panel metrica {% if resumen.actualizaciones %}critico{% else %}neutro{% endif %}">
+    <div class="valor">{{ resumen.actualizaciones | numero }}</div>
+    <div class="etiqueta">Actualizaciones pendientes</div>
+    {# Nota corta: las cinco tarjetas de esta fila comparten altura, y con once líneas en
+       una y dos en las demás la fila medía 402 px de alto (revisión visual del
+       2026-09-09). El detalle va en el panel «Qué cuenta cada cifra», debajo. #}
+    <div class="nota">{% if resumen.actualizaciones %}una por activo y origen de paquete;
+      {{ resumen.actualizaciones_con_version | numero }}
+      {{ 'tiene' if resumen.actualizaciones_con_version == 1 else 'tienen' }} ya una versión
+      que instalar y {{ 'es' if resumen.actualizaciones_con_version == 1 else 'son' }} el trabajo
+      accionable{% if resumen.actualizaciones_sin_version %};
+      <a href="{{ url_for('parches.lista') }}">{{ resumen.actualizaciones_sin_version | numero }} esperan
+      a que se publique la corrección</a>{% endif %}{% else %}ningún paquete pendiente de actualizar{% endif %}</div>
+  </div>
+  <div class="panel metrica {% if resumen.vulnerabilidades_unicas %}alto{% else %}neutro{% endif %}">
+    <div class="valor">{{ resumen.vulnerabilidades_unicas | numero }}</div>
+    <div class="etiqueta">Vulnerabilidades pendientes</div>
+    {#
+      «1.674 CVE distintos», no «1.674 vulnerabilidades distintas»: en esta misma tarjeta
+      la palabra «vulnerabilidades» ya significa «un CVE en un activo» (42.830), así que
+      usarla también para los CVE sin repetir por máquina dejaba dos cifras con el mismo
+      nombre (revisión visual del 2026-09-09).
+
+      Desde el 2026-09-10 esta página cuenta con el mismo criterio de severidad que
+      Amenazas, el Panel y el informe mensual: crítica, alta y media.
+    #}
+    <div class="nota">{% if resumen.abiertas %}una por activo y CVE; son
+      {{ resumen.abiertas | numero }} filas de remediación{% else %}ninguna vulnerabilidad
+      confirmada sin corregir{% endif %}</div>
+  </div>
+  <div class="panel metrica {% if resumen.corregidas_periodo %}exito{% else %}neutro{% endif %}">
+    <div class="valor">{{ resumen.corregidas_periodo | numero }}</div>
+    <div class="etiqueta">Corregidas en {{ resumen.dias | numero }} días</div>
+    {# El mismo texto que en la página de Activos: allí decía «filas de remediación vistas
+       corregidas por OCS Inventory» y aquí no decía de qué eran (revisión del 2026-09-09). #}
+    <div class="nota">filas de remediación vistas corregidas por OCS Inventory{% if resumen.desinstaladas_periodo %}; {{ resumen.desinstaladas_periodo | numero }} de ellas por desinstalación del paquete{% endif %}</div>
+  </div>
+  <div class="panel metrica neutro">
+    <div class="valor">{% if resumen.tiempo_medio_dias is not none %}{{ graficos.fmt(resumen.tiempo_medio_dias, 1) }}{% else %}—{% endif %}</div>
+    <div class="etiqueta">Días de media hasta corregir</div>
+    <div class="nota">{% if resumen.tiempo_medio_dias is not none %}entre la detección y la corrección, en el periodo{% else %}sin correcciones en el periodo{% endif %}</div>
+  </div>
+  <div class="panel metrica {% if resumen.activos_con_abiertas %}alto{% else %}neutro{% endif %}">
+    <div class="valor">{{ resumen.activos_con_abiertas | numero }}</div>
+    <div class="etiqueta">Activos con pendientes</div>
+    {#
+      Nunca «equipos» a secas: el usuario protestó porque no se sabía si eran servidores o
+      equipos de cómputo. Aquí se dicen los dos con su nombre.
+    #}
+    <div class="nota">{{ resumen.servidores_con_abiertas | numero }} servidor{{ 'es' if resumen.servidores_con_abiertas != 1 }} y {{ resumen.equipos_con_abiertas | numero }} equipo{{ 's' if resumen.equipos_con_abiertas != 1 }} de cómputo</div>
+  </div>
+</div>
+
+{# ========================================= 1 ter. qué cuenta cada cifra
+   Panel nuevo (revisión visual del 2026-09-09). La pantalla tenía cuatro cifras distintas
+   bajo la palabra «vulnerabilidades» y dos cifras de activos que no coincidían con las de
+   Amenazas y la página de Activos, sin explicación. Aquí se dice, una por una, qué cuenta
+   cada magnitud, con su cifra, y en qué se diferencia de lo que reporta el resto de la
+   plataforma. Se pone en un panel aparte y no en las tarjetas porque las cinco tarjetas
+   comparten altura: con once líneas en una y dos en las demás, la fila medía 402 px. #}
+<div class="panel mb-18" id="unidades-remediacion" data-tour="3" data-tour-titulo="Qué cuenta cada cifra" data-tour-texto="Las cifras de esta página miden cosas distintas y aquí se dice cuál es cuál: actualizaciones (el trabajo), vulnerabilidades (una por activo y CVE), filas de remediación (una por activo, amenaza y paquete), CVE distintos y activos con pendientes. Todas cuentan lo mismo que Amenazas, el Panel y el informe mensual: solo severidad crítica, alta y media.">
+  <div class="panel-cabecera">
+    <h2>Qué cuenta cada cifra de esta página</h2>
+    <span class="sub">Cuatro magnitudes distintas, cada una con su unidad. Si dos cifras de la plataforma no coinciden, la razón está aquí. Todas cuentan solo lo que se reporta: severidad crítica, alta y media.{% if riesgo_aceptado.vulnerabilidades %} Y ninguna cuenta las {{ riesgo_aceptado.vulnerabilidades | numero }} vulnerabilidad{{ 'es' if riesgo_aceptado.vulnerabilidades != 1 }} cuyo riesgo está aceptado con una excepción vigente: no están corregidas, están aplazadas con responsable y con fecha, y se consultan en la <a href="{{ url_for('excepciones.lista') }}">página de Excepciones</a>.{% endif %}</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead>
+          <tr><th scope="col" class="minw-200">Magnitud</th><th scope="col" class="num minw-110">Hoy</th>
+            <th scope="col" class="minw-240">Qué cuenta exactamente</th>
+            <th scope="col" class="minw-200">Dónde se ve</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Actualizaciones pendientes</th>
+            <td class="num">{{ resumen.actualizaciones | numero }}</td>
+            <td>Una por activo y origen de paquete: los paquetes de un mismo activo con la misma versión instalada, la misma versión objetivo y las mismas vulnerabilidades (los binarios del núcleo, los de sssd) son una sola orden y cuentan una vez. Es la unidad de trabajo.</td>
+            <td>Vista «Por actualización»: una fila por cada una.</td>
+          </tr>
+          <tr>
+            {#
+              Trabajo accionable (2026-09-10). De las actualizaciones pendientes, solo
+              las que ya tienen una versión a la que subir se pueden hacer hoy; el resto
+              esperan a que el fabricante o la distribución publiquen la corrección y
+              tienen su propia cola en «Correcciones pendientes». Mezclarlas hacía que
+              la cola pareciera más grande de lo que se puede trabajar.
+            #}
+            <th scope="row">De ellas, con versión que instalar (trabajo accionable)</th>
+            <td class="num {% if resumen.actualizaciones_con_version %}txt-alto{% else %}tenue{% endif %}">{{ resumen.actualizaciones_con_version | numero }}</td>
+            <td>Las actualizaciones que ya tienen una versión publicada a la que subir: es el trabajo que se puede programar hoy. Las otras {{ resumen.actualizaciones_sin_version | numero }} no tienen todavía ninguna versión que instalar, así que no son trabajo accionable: esperan a que el fabricante publique la corrección, a que la distribución la empaquete o a que el aviso diga en qué versión se corrige.</td>
+            <td>Vista «Por actualización»; la espera, en <a href="{{ url_for('parches.lista') }}">Correcciones pendientes</a>, con los días esperando y el activo más expuesto de cada una.</td>
+          </tr>
+          <tr>
+            <th scope="row">Vulnerabilidades pendientes</th>
+            <td class="num">{{ resumen.vulnerabilidades_unicas | numero }}</td>
+            <td>Una por activo y CVE. La misma vulnerabilidad en el mismo activo cuenta una vez aunque el aviso obligue a actualizar varios paquetes. Es la unidad de riesgo.</td>
+            <td>Tarjeta «Vulnerabilidades pendientes» y columna «Vulnerabilidades que resuelve» de cada fila.</td>
+          </tr>
+          <tr>
+            <th scope="row">Filas de remediación pendientes</th>
+            <td class="num">{{ resumen.abiertas | numero }}</td>
+            <td>Una por activo, amenaza y paquete. Es la trazabilidad: la misma vulnerabilidad aparece una vez por cada paquete que la pide en el mismo activo.</td>
+            <td>Vista «Por vulnerabilidad». La tabla por proceso de negocio y la gráfica semanal cuentan vulnerabilidades, no filas.</td>
+          </tr>
+          <tr>
+            <th scope="row">CVE distintos</th>
+            <td class="num">{{ resumen.cve_distintos | numero }}</td>
+            <td>Identificadores de vulnerabilidad distintos, sin repetir por activo.</td>
+            <td>Esta tabla; en Amenazas, cada uno tiene su ficha.</td>
+          </tr>
+          <tr>
+            <th scope="row">Activos con pendientes</th>
+            <td class="num">{{ resumen.activos_con_abiertas | numero }}</td>
+            <td>Activos con al menos una remediación pendiente de severidad crítica, alta o media. Si no coincide con «Con vulnerabilidades confirmadas» de la página de Activos, la diferencia son activos cuyas pendientes esperan una evaluación nueva o cuya amenaza se descartó a mano: la plataforma no cierra una remediación por eso, espera a que OCS Inventory vea la corrección instalada.</td>
+            <td>Tarjeta «Activos con pendientes» y panel «Remediación» de la <a href="{{ url_for('activos.lista') }}">página de Activos</a>.</td>
+          </tr>
+          <tr>
+            {#
+              Riesgo aceptado (2026-09-10). Esta fila existe SIEMPRE, también con un cero:
+              una cifra que baja porque alguien aceptó el riesgo, y no porque el trabajo
+              se haya hecho, tiene que verse en la misma tabla que la explica.
+            #}
+            <th scope="row">Vulnerabilidades con el riesgo aceptado</th>
+            <td class="num {% if riesgo_aceptado.vulnerabilidades %}txt-medio{% else %}tenue{% endif %}">{{ riesgo_aceptado.vulnerabilidades | numero }}</td>
+            <td>Vulnerabilidades (una por activo y CVE) que están fuera de las cifras de arriba porque la organización aceptó el riesgo por escrito, con responsable, justificación y fecha de vencimiento{% if riesgo_aceptado.filas %}; son {{ riesgo_aceptado.filas | numero }} fila{{ 's' if riesgo_aceptado.filas != 1 }} de remediación{% endif %}. No están corregidas: cuando la excepción venza o se revoque volverán solas a esta página.</td>
+            <td><a href="{{ url_for('excepciones.lista') }}">Página de Excepciones</a>, con su responsable y su fecha; y en la ficha del activo, marcadas con la insignia «Riesgo aceptado».</td>
+          </tr>
+          <tr>
+            {#
+              Esperando datos del inventario (2026-09-10, esquema v14). Esta fila existe
+              SIEMPRE, también con un cero: una cifra que baja porque la plataforma dejó
+              de poder afirmar nada, y no porque el trabajo se haya hecho, tiene que verse
+              en la misma tabla que explica las demás.
+            #}
+            <th scope="row">Remediaciones esperando datos del inventario</th>
+            <td class="num {% if resumen.esperando_datos %}txt-medio{% else %}tenue{% endif %}">{{ resumen.esperando_datos | numero }}</td>
+            <td>Filas de remediación que la evaluación de hoy no puede ni confirmar ni descartar, porque el inventario no trae los datos que hacen falta{% if resumen.esperando_datos %}; son {{ resumen.esperando_datos_vulnerabilidades | numero }} vulnerabilidad{{ 'es' if resumen.esperando_datos_vulnerabilidades != 1 }} en {{ resumen.esperando_datos_activos | numero }} activo{{ 's' if resumen.esperando_datos_activos != 1 }}{% endif %}. No se cierran, porque nadie ha comprobado que estén corregidas, y no cuentan como trabajo pendiente, porque nadie puede hacerlas: hay que arreglar el agente de OCS Inventory de esos activos. En cuanto el inventario vuelva a informar, regresan a esta página con su fecha de detección original.</td>
+            {# Dos cifras distintas, cada una con su unidad (2026-09-15, punto 6): aquí se
+               cuentan FILAS DE REMEDIACIÓN en espera y en la página de Activos se cuentan
+               ACTIVOS con el agente incompleto. Una es subconjunto de la otra. #}
+            <td>Panel «Esperando datos del inventario», debajo{% if resumen.esperando_datos %}; y en la <a href="{{ url_for('activos.lista', vista='sin_datos_windows') }}">página de Activos</a>, con la vista rápida «Sin datos de actualizaciones de Windows», que cuenta <strong>activos</strong>{% if esperando and esperando.activos_con_hallazgo %} ({{ esperando.activos_con_hallazgo | numero }}){% endif %} y no filas de remediación{% endif %}.</td>
+          </tr>
+          <tr>
+            <th scope="row">Filas de activos retirados de OCS Inventory</th>
+            {# Ámbar cuando hay alguna, igual que la insignia «Activo retirado» de la
+               columna «Estado» y que la tarjeta «Remediaciones congeladas» de la ficha
+               del activo (2026-09-15): un concepto, un color. En cero va en neutro, como
+               cualquier otro cero de la plataforma. #}
+            <td class="num {% if resumen.activo_ausente %}txt-medio{% else %}tenue{% endif %}">{{ resumen.activo_ausente | numero }}</td>
+            <td>Remediaciones que quedaron sin hacer porque el activo dejó de figurar en OCS Inventory. No son trabajo pendiente ni trabajo hecho, así que no cuentan en ninguna de las cifras de arriba ni en la gráfica semanal.</td>
+            <td>Filtro «Estado» de abajo, con «Activo retirado».</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{# ========================================= 1 bis. esperando datos del inventario
+   Defecto medido el 2026-09-10: 2.480 remediaciones abiertas sin ninguna vulnerabilidad
+   confirmada detrás, todas de cuatro equipos de cómputo con Windows 11 cuya compilación
+   no se puede calcular porque OCS Inventory no informa de ninguna actualización
+   acumulativa reconocida. Ni se cierran (nadie ha comprobado que estén corregidas) ni
+   cuentan como trabajo pendiente (nadie puede hacerlas): salen de la cola y aparecen
+   aquí, con el activo señalado, porque lo que hay que arreglar es su agente de
+   inventario y eso es tarea de Redes.
+
+   El panel solo se pinta cuando hay alguna: un panel vacío permanente sería ruido. #}
+{% if esperando and esperando.total_filas %}
+<div class="panel mb-18" id="esperando-datos" data-tour="4" data-tour-titulo="Trabajo que nadie puede hacer todavía" data-tour-texto="Aquí están los activos cuyas remediaciones la plataforma no puede ni confirmar ni descartar, porque su inventario no trae los datos necesarios. No cuentan como trabajo pendiente y no aparecen en la cola, pero tampoco se cierran: nadie ha comprobado que estén corregidas. Lo que hay que hacer es revisar el agente de OCS Inventory de cada máquina; en cuanto vuelva a informar, sus remediaciones regresan solas a la cola con su fecha de detección original.">
+  <div class="panel-cabecera">
+    <h2>Esperando datos del inventario</h2>
+    <span class="sub">{{ esperando.total_vulnerabilidades | numero }} vulnerabilidad{{ 'es' if esperando.total_vulnerabilidades != 1 }} ({{ esperando.total_filas | numero }} fila{{ 's' if esperando.total_filas != 1 }} de remediación) en {{ esperando.total_activos | numero }} activo{{ 's' if esperando.total_activos != 1 }}. No están corregidas ni pendientes: la evaluación de hoy no puede afirmar ni negar que sigan afectados. Es mantenimiento del inventario, no una vulnerabilidad.{% if esperando.activos_con_hallazgo %}
+      Ojo con las dos cifras: aquí se cuentan <strong>filas de remediación en espera</strong>, y la página de Activos cuenta
+      <strong>activos</strong> con el agente incompleto —<a href="{{ url_for('activos.lista', vista='sin_datos_windows') }}">{{ esperando.activos_con_hallazgo | numero }} con la vista «Sin datos de actualizaciones de Windows»</a>—.
+      {% if esperando.activos_con_hallazgo > esperando.total_activos %}{{ (esperando.activos_con_hallazgo - esperando.total_activos) | numero }} de {{ 'ellos' if (esperando.activos_con_hallazgo - esperando.total_activos) != 1 else 'ellos' }} todavía no {{ 'tiene' if (esperando.activos_con_hallazgo - esperando.total_activos) == 1 else 'tienen' }} ninguna remediación en espera.{% endif %}{% endif %}</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead>
+          <tr>
+            <th scope="col" class="minw-180">Activo</th>
+            <th scope="col" class="minw-200">Sistema declarado en OCS Inventory</th>
+            <th scope="col" class="num minw-140" title="Una por activo y CVE: la unidad de riesgo">Vulnerabilidades sin poder evaluar</th>
+            <th scope="col" class="num minw-110" title="Desde la detección de la más antigua">Días esperando</th>
+            <th scope="col" class="minw-140">Último inventario</th>
+            <th scope="col" class="minw-260">Qué hay que hacer</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for e in esperando.filas %}
+          <tr>
+            <th scope="row">
+              <a href="{{ url_for('activos.detalle', activo_id=e.activo_id) }}">{{ e.activo_nombre }}</a>
+              <div class="pequeno tenue">{{ e.origen_es }}{% if e.proceso %} · {{ e.proceso }}{% endif %} · {{ e.entorno_es }}</div>
+            </th>
+            <td>
+              {{ e.so_nombre or 'Sin sistema declarado' }}
+              <div class="pequeno tenue mono">{{ e.so_version or 'sin versión' }}</div>
+            </td>
+            <td class="num">{{ e.vulnerabilidades | numero }}
+              <div class="pequeno tenue">{{ e.filas | numero }} fila{{ 's' if e.filas != 1 }}</div>
+            </td>
+            <td class="num {% if e.dias >= 30 %}txt-alto{% else %}tenue{% endif %}">{{ e.dias | numero }}</td>
+            <td class="pequeno">{% if e.ultimo_inventario %}{{ e.ultimo_inventario | fecha_es }}<div class="tenue">{{ e.ultimo_inventario | hace }}</div>{% else %}<span class="tenue">nunca ha reportado</span>{% endif %}</td>
+            <td class="pequeno">
+              {% if e.solo_windows %}Revisar el agente de OCS Inventory de esta máquina: no informa de ninguna actualización acumulativa de Windows reconocida, así que no se puede calcular la compilación instalada y no se puede decidir qué parches le faltan.{% else %}Revisar el agente de OCS Inventory de esta máquina: la evaluación no encuentra los datos que necesita para decidir.{% endif %}
+              <div class="tenue">{{ e.motivo | recortar(160) }}</div>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if esperando.recortado %}
+    <div class="nota">Se muestran los {{ esperando.limite | numero }} activos con más remediaciones en espera; hay más.</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ========================================= 1 ter. avance por tipo de máquina
+   Petición del usuario (2026-09-08): que Redes, los jefes del proceso,
+   vean «vulnerabilidades de servidores y de equipos al mismo tiempo y los avances de cada
+   uno». Lo ven también la administración y el operador SOC (auth.ROLES_AVANCES); la vista
+   pasa «avances» solo a esos perfiles. Cada cifra lleva su unidad escrita y los dos tipos
+   se nombran siempre completos: nunca «equipos» a secas. El porcentaje va en texto y en
+   una barra (no depende solo del color). #}
+{% if avances %}
+<div class="panel mb-18" id="avance-por-tipo" data-tour="5" data-tour-titulo="Avance por tipo de máquina" data-tour-texto="Servidores y equipos de cómputo por separado, para los jefes del proceso: cuántas actualizaciones y cuántas vulnerabilidades siguen pendientes en cada tipo, cuántas se corrigieron en el periodo, cuántos días se tarda de media y cuánto ha avanzado la cola que ya estaba pendiente al empezar el periodo. Redes actualiza los servidores y Mantenimiento los equipos de cómputo; aquí se ve el avance de cada uno.">
+  <div class="panel-cabecera">
+    <h2>Avance por tipo de máquina</h2>
+    {#
+      Por qué desapareció el «porcentaje corregido» (auditoría de tableros del 2026-09-15).
+      Decía «0,6 % corregido: 140 de 22.731» y ese 22.731 era 140 filas corregidas en 30
+      días (un flujo) más 22.591 pendientes hoy (un stock): un denominador que no existe.
+      Es el mismo error que ya se corrigió en la gráfica semanal. Ahora la última columna
+      es un avance de COHORTE —de lo que ya estaba pendiente al empezar el periodo, cuánto
+      se ha cerrado dentro del periodo—, y cuando esa cola anterior no existe no se enseña
+      ningún porcentaje: se dan las dos cifras por separado, cada una con su unidad y su
+      referencia de tiempo, y se explica por qué no son comparables.
+    #}
+    <span class="sub">Servidores (los actualiza Redes) y equipos de cómputo (los actualiza Mantenimiento), cada uno con sus cifras. El avance del periodo mide una sola cosa: de las filas de remediación que <strong>ya estaban pendientes hace {{ resumen.dias | numero }} días</strong>, cuántas se han cerrado desde entonces. Lo corregido en el periodo y lo pendiente hoy son magnitudes distintas —lo primero es movimiento de {{ resumen.dias | numero }} días y lo segundo la foto de hoy— y por eso no se dividen entre sí. Todas estas cifras son de severidad crítica, alta y media, las mismas que reportan Amenazas, el Panel y el informe mensual.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead>
+          {#
+            Anchos mínimos declarados (revisión visual del 2026-09-09): la tabla medía
+            1.340 px dentro de un envoltorio de 1.143 px y la barra de progreso se salía
+            del panel. Con la cabecera de fila en varias líneas (regla «tbody th» de
+            estilo.css) y estos anchos, la tabla cabe.
+          #}
+          <tr>
+            <th scope="col" class="minw-150">Tipo de máquina</th>
+            <th scope="col" class="num minw-120" title="Una por activo y origen de paquete: la unidad de trabajo">Actualizaciones pendientes</th>
+            <th scope="col" class="num minw-140" title="Una por activo y CVE: la unidad de riesgo. Debajo, las filas de remediación (una por activo, amenaza y paquete)">Vulnerabilidades pendientes</th>
+            <th scope="col" class="num minw-110" title="Filas de remediación (una por activo, amenaza y paquete) que OCS Inventory vio corregidas en el periodo">Remediaciones corregidas en {{ resumen.dias | numero }} días</th>
+            <th scope="col" class="num minw-110" title="Entre la detección y la corrección, en el periodo">Días de media hasta corregir</th>
+            <th scope="col" class="minw-220" title="De las filas de remediación que ya estaban pendientes al empezar el periodo, cuántas se han cerrado dentro del periodo">Avance del periodo</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for t in avances %}
+          <tr>
+            <th scope="row">{{ t.nombre }}
+              <div class="pequeno tenue">{{ t.activos_con_abiertas | numero }} {{ t.singular if t.activos_con_abiertas == 1 else t.plural }} con pendientes</div></th>
+            <td class="num {% if t.actualizaciones %}txt-critico-b{% else %}tenue{% endif %}">{{ t.actualizaciones | numero }} <span class="pequeno suave">actualizaci{{ 'ón' if t.actualizaciones == 1 else 'ones' }}</span></td>
+            <td class="num {% if t.pendientes %}txt-alto{% else %}tenue{% endif %}">{{ t.pendientes | numero }} <span class="pequeno suave">vulnerabilidad{{ 'es' if t.pendientes != 1 }}</span><div class="pequeno tenue">{{ t.filas | numero }} fila{{ 's' if t.filas != 1 }} de remediación</div>
+</td>
+            <td class="num {% if t.corregidas %}txt-exito{% else %}tenue{% endif %}">{{ t.corregidas | numero }} <span class="pequeno suave">fila{{ 's' if t.corregidas != 1 }} de remediación</span></td>
+            <td class="num">{% if t.tiempo_medio_dias is not none %}{{ graficos.fmt(t.tiempo_medio_dias, 1) }} <span class="pequeno suave">días</span>{% else %}<span class="tenue">sin correcciones en el periodo</span>{% endif %}</td>
+            <td>
+              {% if t.avance_pct is not none %}
+              <div><strong>{{ t.avance_es }}</strong> <span class="pequeno suave">de la cola anterior: {{ t.cohorte_corregidas | numero }} de {{ t.cohorte | numero }} filas de remediación que ya estaban pendientes el {{ t.desde | fecha_es }}</span></div>
+              {#
+                Numerador y denominador, la misma unidad (filas de remediación), el mismo
+                conjunto de filas y el mismo periodo: la barra dibuja exactamente el
+                porcentaje que tiene al lado.
+              #}
+              {{ graficos.barra_progreso([{'clave': 'exito', 'nombre': 'Cerradas dentro del periodo', 'valor': t.cohorte_corregidas},
+                                          {'clave': 'critico', 'nombre': 'Siguen pendientes', 'valor': t.cohorte_pendientes}],
+                                         leyenda=False,
+                                         aria='Avance del periodo en ' ~ t.plural ~ ': ' ~ t.avance_es ~ ' de la cola que ya estaba pendiente al empezar') }}
+              {% elif t.filas or t.corregidas %}
+              {#
+                Sin cola anterior no hay avance que medir, y no se inventa ninguno: se dan
+                las dos cifras separadas, cada una con su unidad y su referencia de tiempo.
+              #}
+              <div class="pequeno suave">Sin porcentaje: no hay cola anterior con la que medirlo.
+                Todo lo pendiente se detectó dentro de estos {{ t.dias | numero }} días.</div>
+              <div class="pequeno">Las dos cifras, por separado:
+                <strong>{{ t.corregidas | numero }}</strong> fila{{ 's' if t.corregidas != 1 }} de remediación
+                cerrada{{ 's' if t.corregidas != 1 }} en {{ t.dias | numero }} días (movimiento) y
+                <strong>{{ t.filas | numero }}</strong> fila{{ 's' if t.filas != 1 }} de remediación
+                pendiente{{ 's' if t.filas != 1 }} hoy (foto de hoy). No se dividen entre sí.</div>
+              {% else %}
+              <span class="tenue">sin filas de remediación de {{ t.plural }}</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ========================================= 2. por proceso y evolución #}
+<div class="rejilla {% if grafico_semanal %}c2 {% endif %}mb-18">
+  <div class="panel" data-tour="6" data-tour-titulo="Por proceso de negocio" data-tour-texto="Cada servidor pertenece a un proceso de negocio, que se anota en el campo «TAG» de OCS Inventory (la etiqueta libre con la que allí se marca a qué área pertenece cada máquina). La tabla dice cuántas remediaciones siguen pendientes en cada proceso, cuántas de ellas están en producción o contingencia y cuántas se corrigieron en el periodo. Pulse un proceso para filtrar la lista.">
+    <div class="panel-cabecera">
+      <h2>Por proceso de negocio</h2>
+      {#
+        Desde el 2026-09-15 la tabla cuenta VULNERABILIDADES (un CVE en un activo), no
+        filas de remediación. Contando filas, sus columnas sumaban 48.291 mientras la
+        tarjeta de arriba de la misma página decía 32.823 vulnerabilidades: el usuario lo
+        dijo con estas palabras, «este tablero tampoco es muy claro». Ahora la suma de la
+        primera columna es exactamente la tarjeta (comprobado: 32.823), y las filas de
+        trazabilidad siguen disponibles en la vista «Por vulnerabilidad».
+      #}
+      <span class="sub">Cuántas vulnerabilidades tiene pendientes cada proceso de negocio y cuántas se
+        confirmaron corregidas en los últimos {{ resumen.dias | numero }} días. Una vulnerabilidad es un
+        CVE en un activo: si afecta a varios paquetes de la misma máquina cuenta una sola vez, y la suma de
+        la primera columna es la misma cifra de «Vulnerabilidades pendientes» de arriba. «En producción o
+        contingencia» son las que están en los entornos que dan servicio.</span>
+    </div>
+    <div class="panel-cuerpo sin-relleno">
+      {% if resumen.por_proceso %}
+      <div class="tabla-envoltorio">
+        <table class="tabla-compacta">
+          <thead><tr><th class="minw-150">Proceso</th><th class="num" title="Un CVE en un activo; si afecta a varios paquetes de la misma máquina cuenta una vez">Vulnerabilidades pendientes</th><th class="num" title="De las pendientes, las que están en activos de producción o contingencia">En producción o contingencia</th><th class="num" title="Activos de este proceso con al menos una vulnerabilidad pendiente">Activos con pendientes</th><th class="num" title="Vulnerabilidades que se confirmaron corregidas en el periodo">Vulnerabilidades corregidas</th></tr></thead>
+          <tbody>
+          {% for pr in resumen.por_proceso %}
+            <tr>
+              <td><a href="{{ url_for('remediaciones.lista', estado=filtros.estado, proceso=pr.proceso, vista=filtros.vista) }}">{{ pr.proceso }}</a></td>
+              <td class="num {% if pr.vulnerables %}txt-critico-b{% else %}tenue{% endif %}">{{ pr.vulnerables | numero }}
+                <div class="pequeno tenue">{{ pr.abiertas | numero }} fila{{ 's' if pr.abiertas != 1 }} de remediación</div></td>
+              <td class="num {% if pr.vulnerables_expuestas %}txt-alto{% else %}tenue{% endif %}">{{ pr.vulnerables_expuestas | numero }}</td>
+              <td class="num">{{ pr.activos_con_abiertas | numero }}</td>
+              <td class="num {% if pr.vulnerables_corregidas %}txt-exito{% else %}tenue{% endif %}">{{ pr.vulnerables_corregidas | numero }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="vacio"><p>Todavía no hay remediaciones registradas.</p><p class="pequeno">Se abren en la primera sincronización con OCS Inventory que confirme una vulnerabilidad en un activo.</p></div>
+      {% endif %}
+    </div>
+  </div>
+  {% if grafico_semanal %}
+  {% set semanas_vacias = (resumen.semanas or []) | selectattr('sin_datos') | list %}
+  <div class="panel" data-tour="7" data-tour-titulo="Evolución semanal" data-tour-texto="Cada semana lleva DOS barras, una al lado de la otra: las vulnerabilidades que aparecieron y las que se confirmaron corregidas. Cada barra escribe su propio número; no se suman, porque son dos flujos opuestos. Una vulnerabilidad es un CVE en un activo, la misma unidad que la tarjeta de arriba; no es el total pendiente, sino el movimiento de cada semana. Si la barra verde iguala o supera a la roja, se está cerrando lo que se abre. Las remediaciones de activos retirados de OCS Inventory no cuentan aquí: no son trabajo pendiente ni trabajo hecho.">
+    <div class="panel-cabecera">
+      <h2>Vulnerabilidades detectadas y corregidas por semana</h2>
+      {#
+        La gráfica sumaba 66.326 detectadas cuando la página entera decía 62.985, porque
+        contaba también las filas de activos retirados de OCS Inventory (revisión visual
+        del 2026-09-09). Ahora esas quedan fuera y la suma coincide con la tarjeta.
+
+        Barras AGRUPADAS y no apiladas desde el 2026-09-15 (revisión de claridad, punto
+        4): apiladas, el número escrito encima de cada semana era la suma de detectadas y
+        corregidas —28.019 en la semana del 24 de agosto—, una cifra que no significa
+        nada y que se leía como «esa semana se detectaron 28.019».
+      #}
+      <span class="sub">Cuántas vulnerabilidades aparecieron y cuántas se confirmaron corregidas cada semana de los últimos {{ resumen.dias | numero }} días. Cada semana lleva <strong>dos barras separadas, cada una con su número</strong>: son dos flujos opuestos y no se suman. Una vulnerabilidad es un CVE en un activo: si afecta a varios paquetes de la misma máquina cuenta una sola vez. Cada pareja de barras es una semana que empieza en lunes. No cuentan las de activos retirados de OCS Inventory. <strong>No es el total pendiente</strong>: aquí se ve el movimiento de cada semana, y lo que queda abierto hoy es la cifra de «Vulnerabilidades pendientes» de arriba.</span>
+    </div>
+    <div class="panel-cuerpo">
+      <div class="grafico-envoltorio">{{ grafico_semanal }}</div>
+      {#
+        Una semana sin barra y una semana con cero se ven igual: se dicen con su fecha
+        completa. Cuando una serie entera vale cero, su color pasa a neutro en la leyenda
+        (webui/vistas/remediaciones.py, «_grafico_semanal»): un cero en verde se lee como
+        si algo hubiera ido bien.
+      #}
+      {% if semanas_vacias %}
+      <p class="pequeno tenue mt-8">Sin ninguna detección ni corrección en {{ semanas_vacias | length | numero }} de las {{ resumen.semanas | length | numero }} semanas del periodo:
+        {% for s in semanas_vacias %}la del {{ s.etiqueta_larga }}{% if not loop.last %}{{ ' y ' if loop.revindex == 2 else ', ' }}{% endif %}{% endfor %}. Esas semanas no tienen barra.</p>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+{# ========================================= 3. filtros y listado #}
+<div class="panel" data-tour="8" data-tour-titulo="Buscar, acotar y elegir la vista" data-tour-texto="Escriba un nombre de activo, una dirección IP, un CVE o un paquete y la lista se actualiza al instante. Con «Vista» se elige entre ver una fila por actualización, que es lo que hay que instalar, o una fila por vulnerabilidad, que es lo que hay que investigar. Los selectores actúan solos y la exportación CSV conserva los filtros.">
+  <div class="panel-cabecera">
+    <h2>Filtros</h2>
+    {% if hay_filtros %}
+    <div class="panel-acciones">
+      <a class="btn pequeno" href="{{ url_for('remediaciones.lista', vista=filtros.vista) }}">Quitar filtros</a>
+    </div>
+    {% endif %}
+    <span class="sub">Por defecto se muestran las pendientes agrupadas por actualización, con las tres severidades que se reportan: crítica, alta y media. Elija «Corregidas» para ver lo ya resuelto y cuánto se tardó, la vista «Por vulnerabilidad» para trabajar CVE a CVE, o «Severidad» para quedarse con una sola.</span>
+  </div>
+  <div class="panel-cuerpo">
+    <form method="get" class="filtros" action="{{ url_for('remediaciones.lista') }}" data-filtro-vivo="tabla-remediaciones">
+      <div class="campo flex2-220">
+        <label for="q">Activo, IP, CVE o paquete</label>
+        <input type="text" id="q" name="q" value="{{ filtros.q }}" placeholder="srv-web-01, 10.0.0.12, CVE-2026-1234, openssl…">
+      </div>
+      <div class="campo">
+        <label for="vista">Vista</label>
+        <select id="vista" name="vista">
+          {% for v in vistas %}
+            <option value="{{ v }}" {% if v == filtros.vista %}selected{% endif %}>{{ vista_es[v] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="estado">Estado</label>
+        <select id="estado" name="estado">
+          <option value="abierta" {% if filtros.estado == 'abierta' %}selected{% endif %}>Pendientes</option>
+          <option value="corregida" {% if filtros.estado == 'corregida' %}selected{% endif %}>Corregidas</option>
+          <option value="activo_ausente" {% if filtros.estado == 'activo_ausente' %}selected{% endif %}>Activo retirado</option>
+          <option value="todas" {% if filtros.estado == 'todas' %}selected{% endif %}>Todas</option>
+        </select>
+      </div>
+      {#
+        Filtro de severidad. Solo ofrece las tres que se reportan: crítica, alta y media
+        (2026-09-10). La severidad baja no es una opción porque no cuenta en nada, así
+        que «Todas las que se reportan» ya es la cola de trabajo completa.
+      #}
+      <div class="campo">
+        <label for="severidad">Severidad</label>
+        <select id="severidad" name="severidad">
+          {% for s in severidades %}
+            <option value="{{ s }}" {% if s == filtros.severidad %}selected{% endif %}>{{ severidad_filtro_es[s] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="proceso">Proceso de negocio</label>
+        <select id="proceso" name="proceso">
+          <option value="">Todos</option>
+          {% for p in procesos %}
+            <option value="{{ p }}" {% if p == filtros.proceso %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo minw-auto">
+        <button type="submit" class="btn primario">Filtrar</button>
+      </div>
+    </form>
+    {#
+      La ayuda va debajo del formulario y no dentro del campo: los campos de «.filtros»
+      se alinean por abajo y una ayuda dentro de uno desalinearía los demás.
+    #}
+    <p class="pequeno tenue mt-8">Esta cola son {{ resumen.vulnerabilidades_unicas | numero }}
+      vulnerabilidad{{ 'es' if resumen.vulnerabilidades_unicas != 1 }} pendiente{{ 's' if resumen.vulnerabilidades_unicas != 1 }}
+      (una por activo y CVE) en {{ resumen.actualizaciones | numero }}
+      actualizaci{{ 'ón' if resumen.actualizaciones == 1 else 'ones' }}, con el mismo criterio de
+      severidad que Amenazas, el Panel y el informe mensual.</p>
+  </div>
+</div>
+
+<div class="panel" id="tabla-remediaciones" tabindex="-1" data-zona-viva
+     data-zona-nombre="Cola de remediación" data-tour="9" data-tour-titulo="Una fila por actualización, con su trazabilidad" data-tour-texto="Cada fila es una actualización en un activo: un paquete, o varios paquetes del mismo origen (los binarios del núcleo, por ejemplo) que tienen la misma versión instalada, la misma versión objetivo y las mismas vulnerabilidades, y que una sola orden resuelve. La versión objetivo es la más alta de las que piden los avisos: instalarla resuelve también las anteriores. Al desplegar «paquetes» se ve cada paquete con su versión instalada; al desplegar «Trazabilidad», la cola de versiones solicitadas y qué CVE pedía cada una. En la vista «Por vulnerabilidad» cada fila vuelve a ser un CVE en un activo y un paquete, para investigarlo.">
+  <div class="panel-cabecera">
+    {% if agrupada %}
+    <h2>{% if filtros.estado == 'abierta' %}Actualizaciones pendientes{% elif filtros.estado == 'corregida' %}Actualizaciones ya corregidas{% elif filtros.estado == 'activo_ausente' %}Actualizaciones de activos retirados{% else %}Todas las actualizaciones{% endif %}</h2>
+    <span class="sub">{{ total_actualizaciones | numero }} actualizaci{{ 'ón' if total_actualizaciones == 1 else 'ones' }} (una por activo y origen de paquete), agrupadas a partir de {{ total_vulnerabilidades | numero }} fila{{ 's' if total_vulnerabilidades != 1 }} de remediación (una por activo, amenaza y paquete){% if filtros.proceso %} del proceso «{{ filtros.proceso }}»{% endif %}{% if filtros.q %} que coinciden con «{{ filtros.q }}»{% endif %}{% if paginas > 1 %}{% if pagina == 1 %}; se muestran las {{ n_pagina | numero }} primeras{% else %}; se muestran las actualizaciones {{ ((pagina - 1) * por_pagina + 1) | numero }} a {{ [pagina * por_pagina, total] | min | numero }}{% endif %}{% endif %}. Primero las de explotación activa y las más graves, y dentro de eso las que llevan más tiempo esperando.</span>
+    {% else %}
+    {#
+      El título dice la UNIDAD de lo que cuenta la cifra de debajo: son FILAS de
+      trazabilidad (62.985), no vulnerabilidades distintas (42.830). Decía
+      «Vulnerabilidades pendientes» sobre 62.985 y era la misma palabra con otra cifra
+      que la tarjeta de arriba (revisión visual del 2026-09-09).
+    #}
+    <h2>Filas de trazabilidad, una por activo, amenaza y paquete{% if filtros.estado == 'corregida' %} · corregidas{% elif filtros.estado == 'activo_ausente' %} · de activos retirados{% elif filtros.estado == 'abierta' %} · pendientes{% else %} · todas{% endif %}</h2>
+    <span class="sub">{{ total_vulnerabilidades | numero }} fila{{ 's' if total_vulnerabilidades != 1 }} de remediación, una por activo, amenaza y paquete. Son filas de trazabilidad, no vulnerabilidades distintas: la misma vulnerabilidad aparece una vez por cada paquete que la pide en el mismo activo, y se agrupan en {{ total_actualizaciones | numero }} actualizaci{{ 'ón' if total_actualizaciones == 1 else 'ones' }}{% if filtros.proceso %}; del proceso «{{ filtros.proceso }}»{% endif %}{% if filtros.q %}; coinciden con «{{ filtros.q }}»{% endif %}{% if paginas > 1 %}{% if pagina == 1 %}; se muestran las {{ n_pagina | numero }} primeras{% else %}; se muestran las filas {{ ((pagina - 1) * por_pagina + 1) | numero }} a {{ [pagina * por_pagina, total] | min | numero }}{% endif %}{% endif %}. Las pendientes primero, luego las de explotación activa y las más graves.</span>
+    {% endif %}
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    {% if alcanzables is defined and alcanzables < total %}
+    {#
+      Solo se puede llegar a las primeras «alcanzables» filas mientras
+      «threatintel.remediacion.listar» no acepte un desplazamiento: leer mas lejos
+      obligaria a cargar en memoria toda la lista. Se dice con claridad y se ofrecen
+      las dos salidas: acotar los filtros o exportar el CSV, que va completo.
+    #}
+    <div class="aviso info" role="status">En pantalla se pueden recorrer las primeras
+      {{ alcanzables | numero }} filas de las {{ total | numero }} que cumplen los filtros,
+      repartidas en {{ paginas | numero }} páginas de {{ por_pagina | numero }}. Para llegar al resto,
+      acote la lista con el estado, el proceso o el texto buscado, o exporte el CSV, que lleva
+      hasta {{ limite_csv | numero }} filas con los mismos filtros.</div>
+    {% endif %}
+    {% if paginas > 1 and pagina == 1 %}
+    <div class="aviso info" role="status">Se muestran las {{ n_pagina | numero }} primeras de {{ total | numero }} {% if agrupada %}actualizaciones{% else %}remediaciones{% endif %}, repartidas en {{ paginas | numero }} páginas: use los controles del final de la tabla para recorrerlas, acote la lista con los filtros o exporte el CSV, que lleva hasta {{ limite_csv | numero }} filas con los mismos filtros.</div>
+    {% endif %}
+
+    {# ------------------------------------------------- vista agrupada (por omisión) #}
+    {% if agrupada and grupos %}
+    <div class="tabla-envoltorio">
+      {% if activo_acotado %}
+      <p class="pequeno" id="aviso-activo-acotado">Solo las actualizaciones del activo
+        <a href="{{ url_for('activos.detalle', activo_id=activo_acotado.id) }}"><strong>{{ activo_acotado.nombre }}</strong></a>{% if filtros.q %} que coinciden con «{{ filtros.q }}»{% endif %}.
+        <a href="{{ url_for('remediaciones.lista', vista='actualizacion', estado=filtros.estado) }}">Ver las de todos los activos</a>.</p>
+      {% endif %}
+      <table class="tabla-compacta">
+        <thead>
+          {#
+            La severidad y el KEV van en la primera columna, junto al estado y a los días de
+            espera: los tres dicen lo mismo, con qué prioridad hay que hacerlo, y así la
+            trazabilidad se queda con el ancho que necesita para leerse (2026-09-08).
+          #}
+          {#
+            Anchos mínimos declarados y ajustados a lo que cabe (revisión visual del
+            2026-09-09): la tabla medía 1.319 px dentro de un envoltorio de 1.143 px, y lo
+            que quedaba cortado era la columna de acciones —el botón «Ya se actualizó…» y
+            el identificador de la remediación—, es decir la acción principal. La suma de
+            los mínimos más el relleno de las celdas cabe en el envoltorio.
+          #}
+          <tr><th class="minw-100">Prioridad</th><th class="minw-150">Activo</th>
+            <th class="minw-230">Actualización: instalada y versión objetivo</th>
+            <th class="num minw-120" title="Una por activo y CVE: la misma vulnerabilidad en varios paquetes cuenta una vez">Vulnerabilidades que resuelve</th>
+            <th class="minw-200">Trazabilidad de las versiones solicitadas</th>
+            {% if puede_remediar %}<th class="minw-200">Acciones sobre la actualización</th>{% endif %}</tr>
+        </thead>
+        <tbody>
+        {% for g in grupos %}
+          <tr>
+            <td class="nowrap" id="rem-{{ g.remediacion_id }}">
+              <span class="insignia {{ g.estado_clave }}">{{ g.estado_es }}</span>
+              {% if g.severidad %}<div class="mb-6"><span class="insignia {{ g.severidad | lower }}">{{ g.severidad | severidad_es }}</span>{% if g.in_kev %} <span class="insignia kev" title="Explotación activa confirmada por CISA en alguna de las vulnerabilidades de esta actualización">KEV</span>{% endif %}</div>{% elif g.in_kev %}<div class="mb-6"><span class="insignia kev" title="Explotación activa confirmada por CISA">KEV</span></div>{% endif %}
+              {% if g.pendientes and (g.corregidas or g.retiradas) %}<div class="pequeno tenue">{{ g.pendientes | numero }} sin corregir de {{ g.vulnerabilidades | numero }}</div>{% endif %}
+              {% if g.dias is not none %}
+              <div class="pequeno tenue" title="Días desde la detección más antigua de las vulnerabilidades que esta actualización todavía no ha corregido">{{ g.dias | numero }} día{{ 's' if g.dias != 1 }} esperando</div>
+              {% elif g.dias_totales is not none %}
+              <div class="pequeno tenue" title="No queda nada pendiente en esta actualización: es el tiempo que tardó en cerrarse">tardó {{ g.dias_totales | numero }} día{{ 's' if g.dias_totales != 1 }} en corregirse</div>
+              {% endif %}
+            </td>
+            <td>
+              <a href="{{ url_for('activos.detalle', activo_id=g.activo_id) }}">{{ g.activo_nombre }}</a>
+              <div class="pequeno tenue">{% if g.ip %}<span class="mono">{{ g.ip }}</span> · {% endif %}{{ g.entorno_es }}{% if g.proceso %} · {{ g.proceso }}{% endif %}</div>
+              <div class="pequeno tenue">{% if g.origen == 'servidores' %}servidor{% else %}equipo de cómputo{% endif %}{% if g.so_nombre %} · {{ g.so_nombre | recortar(40) }}{% endif %}</div>
+            </td>
+            <td class="pequeno">
+              {#
+                Una actualización por ORIGEN de paquete (2026-09-09): si la fila junta varios
+                paquetes del mismo origen se nombra («Núcleo Linux 6.8.0-60-generic», «sssd y
+                17 paquetes más») y la lista de paquetes, cada uno con su versión instalada,
+                se despliega con <details>: es la trazabilidad que pidió el usuario.
+              #}
+              {% if g.es_fusion %}
+              <div class="nombre-actualizacion"{% if g.variante_origen == 'instalada' %} title="La versión del nombre es la que OCS Inventory ve instalada: ninguno de los paquetes de esta actualización la lleva en su nombre"{% endif %}>{{ g.nombre }}</div>
+              <details class="paquetes-fusion">
+                <summary>{{ g.n_paquetes | numero }} paquetes del mismo origen: una sola orden los actualiza</summary>
+                {# El mismo texto, palabra por palabra, en las tres plantillas que lo
+                   muestran (esta, _remediaciones_activo.html y remediacion.html): antes
+                   había tres redacciones para el mismo desplegable. #}
+                <ul class="lista-lineas">
+                {% for p in g.paquetes %}
+                  <li><span class="mono">{{ p.paquete }}</span> · instalada{% if not p.version_instalada_es_real %} (según la detección){% endif %} <span class="mono">{{ p.version_instalada or 'sin dato' }}</span> · {{ p.filas | numero }} fila{{ 's' if p.filas != 1 }} de remediación</li>
+                {% endfor %}
+                </ul>
+              </details>
+              {% else %}
+              <span class="mono">{{ g.paquete or '—' }}</span>
+              {% endif %}
+              {#
+                «Instalada» es la versión que OCS Inventory reporta HOY, no la del momento
+                de la detección: con la antigua, 164 actualizaciones mandaban instalar algo
+                que la máquina ya tenía (revisión del 2026-09-08).
+              #}
+              <div class="pequeno tenue">Instalada{% if not g.version_instalada_es_real %} (según la detección){% endif %}:
+                <span class="mono">{{ g.version_instalada or 'sin dato' }}</span>{% if g.instaladas_distintas %} <span title="Los paquetes de esta actualización no tienen todos la misma versión instalada; se muestra la más alta y cada paquete lleva la suya en la lista">(la más alta; difieren entre paquetes)</span>{% endif %}</div>
+              {% if g.pendientes %}
+                {% if g.version_objetivo %}
+                <div class="pequeno"><strong>Actualizar a</strong> <span class="mono">{{ g.version_objetivo }}</span></div>
+                  {% if g.versiones_pedidas > 1 %}
+                  <div class="pequeno tenue">La más alta de las {{ g.versiones_pedidas | numero }} versiones que piden los avisos: instalarla resuelve también las anteriores.</div>
+                  {% endif %}
+                {% else %}
+                <div class="pequeno tenue">Todavía no se conoce la versión que corrige: figura en «Correcciones pendientes».</div>
+                {% endif %}
+              {% elif g.estado == 'corregida' %}
+                <div class="pequeno"><strong>Se actualizó a</strong> <span class="mono">{{ g.version_final or g.version_objetivo or 'versión no registrada' }}</span></div>
+              {% else %}
+                <div class="pequeno tenue">Actualización que quedó sin hacer: el activo ya no figura en OCS Inventory{% if g.version_objetivo %} (pedía la versión <span class="mono">{{ g.version_objetivo }}</span>){% endif %}.</div>
+              {% endif %}
+              {% if g.sin_version_objetivo and g.version_objetivo and g.pendientes %}<div class="pequeno tenue">{{ g.sin_version_objetivo | numero }} de estas vulnerabilidades aún no tienen versión conocida que las corrija.</div>{% endif %}
+              {#
+                Con un filtro puesto el grupo puede casar solo en parte, pero la versión
+                objetivo es siempre la de la actualización completa: si no se dijera, la
+                fila parecería una actualización de una sola vulnerabilidad y quien la
+                ejecutara dejaría las demás abiertas.
+              #}
+              {% if g.coincidencias is not none and g.coincidencias < g.vulnerabilidades %}
+              <div class="pequeno tenue">Coincide{{ 'n' if g.coincidencias != 1 }} {{ g.coincidencias | numero }} de sus {{ g.vulnerabilidades | numero }} vulnerabilidades con los filtros (el texto buscado y la severidad); la versión objetivo es la de la actualización completa.</div>
+              {% endif %}
+              {#
+                Los paquetes hermanos: el mismo aviso obliga a actualizar varios paquetes
+                del mismo activo (el caso del núcleo que denunció el usuario). Sin esta
+                línea, el mismo CVE se lee como tres tareas sin relación.
+              #}
+              {#
+                Los paquetes hermanos: otros paquetes del mismo activo que comparten avisos
+                con esta actualización pero NO cumplen la regla de fusión (otra versión
+                instalada u otro conjunto de vulnerabilidades: el linux-tools-common que
+                comparte 29 de los 32 CVE del núcleo). Van en su propia fila y se enlazan.
+              #}
+              {#
+                Dos filas del mismo activo pueden pedir EXACTAMENTE la misma versión y las
+                mismas vulnerabilidades y aun así no fusionarse, porque cada paquete tiene
+                instalada una versión distinta: es el caso de un servidor con dos imágenes
+                del núcleo instaladas a la vez (revisión de claridad del 2026-09-15, punto
+                5). Se dice con todas las letras, en vez de dejar creer que el listado ya
+                lo agrupa todo.
+              #}
+              {% if g.hermanos_misma_orden %}
+              <div class="pequeno"><span class="insignia neutra">La misma orden resuelve {{ (g.hermanos_misma_orden | length + 1) | numero }} filas</span>
+                <div class="tenue">Este activo tiene {{ (g.hermanos_misma_orden | length + 1) | numero }} paquetes instalados a la vez que piden la misma versión (<span class="mono">{{ g.version_objetivo }}</span>) y las mismas {{ g.vulnerabilidades | numero }} vulnerabilidad{{ 'es' if g.vulnerabilidades != 1 }}. Van en filas separadas porque cada uno tiene instalada una versión distinta —lo normal cuando conviven varias imágenes del núcleo—, pero <strong>no es trabajo repetido</strong>:
+                  {% for h in g.hermanos_misma_orden %}<a href="{{ url_for('remediaciones.lista', vista='actualizacion', activo=g.activo_id, q=h.paquete, estado=filtros.estado or none) }}"><span class="mono">{{ h.paquete | recortar(34) }}</span></a>{{ ', ' if not loop.last }}{% endfor %}.</div></div>
+              {% endif %}
+              {% set otros = g.hermanos | rejectattr('paquete', 'in', g.hermanos_misma_orden | map(attribute='paquete') | list) | list %}
+              {% if otros %}
+              <div class="pequeno tenue">Comparte avisos con {{ otros | length | numero }} paquete{{ 's' if otros | length != 1 }} más de este activo que va{{ 'n' if otros | length != 1 }} en su propia actualización, porque {{ 'pide' if otros | length == 1 else 'piden' }} otra versión u otro conjunto de vulnerabilidades:
+                {% for h in otros %}<a href="{{ url_for('remediaciones.lista', vista='actualizacion', activo=g.activo_id, q=h.paquete, estado=filtros.estado or none) }}"><span class="mono">{{ h.paquete | recortar(34) }}</span></a>{% if h.cves > 1 %} ({{ h.cves | numero }} vulnerabilidades en común){% endif %}{{ ', ' if not loop.last }}{% endfor %}.
+                Cada vulnerabilidad compartida se cuenta una sola vez en «Vulnerabilidades pendientes».</div>
+              {% endif %}
+              {% if g.msrc %}<div class="tenue">actualización acumulativa de Windows (boletines de Microsoft)</div>{% endif %}
+              {#
+                Fusión incompleta: la plataforma no pudo confirmar qué paquetes del activo
+                cubre esta actualización y la fila muestra solo uno. Se dice en pantalla
+                (nunca en silencio) y queda en el registro del servicio.
+              #}
+              {% if g.fusion_incompleta %}
+              <div class="mt-8"><span class="insignia medium">Fusión incompleta</span>
+                <div class="pequeno tenue">No se pudo comprobar si esta actualización cubre más paquetes de este activo, así que la fila muestra uno solo: <a href="{{ url_for('activos.detalle', activo_id=g.activo_id) }}#actualizaciones-activo">revise la ficha de {{ g.activo_nombre }}</a>. El incidente quedó anotado en el registro del servicio.</div>
+              </div>
+              {% endif %}
+            </td>
+            {#
+              La unidad va EN PANTALLA, no solo en el título emergente (invisible con
+              teclado), y la sublínea de filas está SIEMPRE: sin ella la fila de un solo
+              paquete parecía incompleta al lado de las fusionadas (revisión visual del
+              2026-09-09).
+            #}
+            <td class="num" title="Vulnerabilidades distintas que resuelve esta única actualización: una por activo y CVE{% if g.es_fusion %}; la misma vulnerabilidad en varios paquetes cuenta una vez{% endif %}">{{ g.vulnerabilidades | numero }} <span class="pequeno suave">vulnerabilidad{{ 'es' if g.vulnerabilidades != 1 }}</span>
+              <div class="pequeno tenue">{{ g.filas | numero }} fila{{ 's' if g.filas != 1 }} de remediación en {{ g.n_paquetes | numero }} paquete{{ 's' if g.n_paquetes != 1 }}</div></td>
+            <td class="pequeno">
+              {#
+                La trazabilidad va en <details>: HTML puro, cumple la CSP y no necesita
+                JavaScript. Es «la cola» de versiones que pidió el usuario, de la más alta
+                a la más baja, con el CVE y el aviso que pedía cada una. Con varios paquetes
+                cada CVE se lista UNA vez y dice en cuántos paquetes está.
+              #}
+              <details>
+                <summary class="pequeno">{{ g.versiones_pedidas | numero }} versi{{ 'ón' if g.versiones_pedidas == 1 else 'ones' }} solicitada{{ 's' if g.versiones_pedidas != 1 }}{% if g.sin_version_objetivo %} y {{ g.sin_version_objetivo | numero }} vulnerabilidad{{ 'es' if g.sin_version_objetivo != 1 }} sin versión conocida todavía{% endif %} · {{ g.vulnerabilidades | numero }} vulnerabilidad{{ 'es' if g.vulnerabilidades != 1 }}</summary>
+                <p class="pequeno tenue">Cola de versiones a las que se ha pedido actualizar, de la más alta a la más baja. Instalar la más alta resuelve las anteriores.{% if g.es_fusion %} Cada vulnerabilidad se lista una vez aunque esté en los {{ g.n_paquetes | numero }} paquetes.{% endif %}</p>
+                {#
+                  Recorte honesto (2026-09-09): esta lista se pintaba entera, y hay
+                  actualizaciones de 1.358 vulnerabilidades: una sola página llegaba a
+                  pesar 8,32 MiB. Se pintan las primeras y se dice cuántas quedan y dónde
+                  están todas. Las cifras de la fila y la versión objetivo son las de la
+                  actualización COMPLETA: no dependen de este recorte.
+                #}
+                {% if g.truncado %}
+                <p class="pequeno">Se muestran las {{ g.cves_mostrados | numero }} primeras de {{ g.vulnerabilidades | numero }} vulnerabilidades; {% if g.cves_truncados == 1 %}la otra está{% else %}las otras {{ g.cves_truncados | numero }} están{% endif %} en la <a href="{{ url_for('activos.detalle', activo_id=g.activo_id) }}#remediaciones-lista">ficha de {{ g.activo_nombre }}</a>, de veinte en veinte.{% if g.versiones_truncadas %} De las {{ g.versiones_pedidas | numero }} versiones que piden los avisos{% if g.versiones_mostradas == 1 %} se lista solo la más alta{% else %} se listan las {{ g.versiones_mostradas | numero }} más altas{% endif %}.{% endif %} La versión objetivo se calculó con todas.</p>
+                {% endif %}
+                <ol class="lista-lineas">
+                {% for v in g.versiones %}
+                  <li>
+                    <span class="mono">{{ v.version or 'sin versión conocida' }}</span>{% if v.es_objetivo %} · <strong>versión objetivo</strong>{% endif %} · {{ v.total | numero }} vulnerabilidad{{ 'es' if v.total != 1 }}{% if v.truncados %} · se muestra{{ 'n' if v.mostrados != 1 }} {{ v.mostrados | numero }}{% endif %}
+                    <ul class="lista-lineas">
+                    {% for c in v.cves %}
+                      <li>
+                        <a href="{{ url_for('activos.detalle', activo_id=g.activo_id) }}#rem-{{ c.id }}" title="Abre la ficha del activo en la fila de esta vulnerabilidad">Remediación número {{ c.id }}</a> ·
+                        {% if c.threat_id %}<a class="mono" href="{{ url_for('amenazas.detalle', threat_id=c.threat_id) }}">{{ c.cve }}</a>{% else %}<span class="mono">{{ c.cve }}</span>{% endif %}
+                        {% if c.severity %} · {{ c.severity | severidad_es }}{% endif %}
+                        {% if c.in_kev %} · <span class="insignia kev">KEV</span>{% endif %}
+                        {% if c.aviso %} · aviso {{ c.aviso | recortar(24) }}{% endif %}
+                        {% if c.n_paquetes > 1 %} · en {{ c.n_paquetes | numero }} paquetes{% endif %}
+                        · detectada {{ c.detectado_at | hace }}
+                        {% if c.estado != 'abierta' %} · <span class="insignia {{ c.estado_clave }}">{{ c.estado_es }}</span>{% if c.version_final %} en la versión <span class="mono">{{ c.version_final }}</span>{% endif %}{% if c.cerrado_motivo %} — {{ c.cerrado_motivo | recortar(140) }}{% endif %}{% endif %}
+                        {% if c.notas %} · {{ c.notas | numero }} nota{{ 's' if c.notas != 1 }}{% endif %}
+                      </li>
+                    {% endfor %}
+                    {% if v.truncados %}
+                      <li class="tenue">y {{ v.truncados | numero }} vulnerabilidad{{ 'es' if v.truncados != 1 }} más que pide{{ 'n' if v.truncados != 1 }} esta misma versión, en la <a href="{{ url_for('activos.detalle', activo_id=g.activo_id) }}#remediaciones-lista">ficha del activo</a>.</li>
+                    {% endif %}
+                    </ul>
+                  </li>
+                {% endfor %}
+                </ol>
+              </details>
+            </td>
+            {% if puede_remediar %}
+            <td class="pequeno">
+              {% if g.remediacion_id %}
+              {#
+                Las dos acciones de Redes, aquí y no solo en la ficha del
+                activo. En esta vista se aplican a TODA la actualización (todas las
+                vulnerabilidades pendientes de ese activo y ese paquete), porque una sola
+                actualización las resuelve todas; el botón y el mensaje lo dicen.
+                La marca de la persona NO cierra nada: pide la comprobación y la plataforma
+                decide comparando la versión instalada con la que corrige.
+              #}
+              {# Sin abreviaturas: «Remediación número 43127». Es el identificador con el
+                 que referirse a esta actualización; la acción se aplica a todas sus filas
+                 pendientes, en todos sus paquetes. #}
+              <div class="pequeno" title="Identificador con el que referirse a esta actualización al hablar con Redes; la acción se aplica a todas sus filas pendientes, en todos sus paquetes">Remediación número <span class="mono">{{ g.remediacion_id }}</span></div>
+              {% if g.filas_pendientes > 1 %}<div class="pequeno tenue">y {{ (g.filas_pendientes - 1) | numero }} fila{{ 's' if g.filas_pendientes != 2 }} de remediación más de esta actualización{% if g.es_fusion %} ({{ g.n_paquetes | numero }} paquetes){% endif %}</div>{% endif %}
+              {% if g.comprobacion_veredicto %}
+              {#
+                La insignia lleva el veredicto en dos palabras y la frase entera en el
+                «title»: una insignia con una frase dentro no se puede partir (nowrap) y
+                estiraba la tabla fuera de la pantalla.
+              #}
+              <div class="mb-6">
+                <span class="insignia {{ g.comprobacion_clave }}" title="{{ g.comprobacion_veredicto_es }}">{{ comprobacion_corto.get(g.comprobacion_veredicto, g.comprobacion_veredicto) }}</span>
+                <div class="pequeno tenue">{{ g.comprobacion_veredicto_es }}. Comprobado {{ g.comprobacion_at | hace }}{% if g.comprobacion_pedida_por %}, a petición de {{ g.comprobacion_pedida_por }}{% endif %}</div>
+              </div>
+              {% endif %}
+              {% if g.notas %}<div class="pequeno tenue">{{ g.notas | numero }} nota{{ 's' if g.notas != 1 }} documentada{{ 's' if g.notas != 1 }}</div>{% endif %}
+              {#
+                El tope por petición (threatintel.remediacion.LIMITE_ACCION_GRUPO) es una
+                cota real: por encima de él la petición se rechaza entera. Así que si esta
+                actualización lo supera NO se pinta ningún botón de grupo —antes se pintaba
+                «Ya se actualizó: comprobar las 1.358» y siempre respondía con el aviso del
+                tope (revisión del 2026-09-09)—: se explica y se enlaza la ficha del activo,
+                donde cada vulnerabilidad se comprueba y se documenta por separado.
+              #}
+              {% set sobre_el_tope = (g.filas_pendientes or 0) > limite_accion_grupo %}
+              {% if g.pendientes and sobre_el_tope %}
+              <div class="pequeno">
+                <span class="insignia medium">Demasiadas filas para una sola acción</span>
+                <p class="pequeno tenue">Esta actualización tiene {{ g.filas_pendientes | numero }} filas de remediación pendientes y el tope por petición es {{ limite_accion_grupo | numero }}, así que no se ofrecen aquí las acciones de grupo: se harían a medias. Trabájela desde la <a href="{{ url_for('activos.detalle', activo_id=g.activo_id) }}#remediaciones-lista">ficha de {{ g.activo_nombre }}</a>, donde cada vulnerabilidad se comprueba y se documenta por separado, o espere a que la sincronización con OCS Inventory cierre las ya corregidas.</p>
+              </div>
+              {% endif %}
+              {% if g.pendientes and not sobre_el_tope %}
+              <form method="post" action="{{ url_for('remediaciones.comprobar', remediacion_id=g.remediacion_id) }}" class="inline"
+                    data-accion-viva="tabla-remediaciones" data-accion-espera="Comprobando…"
+                    data-accion-tiempo="120000">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <input type="hidden" name="volver" value="{{ volver }}">
+                <input type="hidden" name="alcance" value="grupo">
+                <button class="btn pequeno" type="submit"
+                        title="La plataforma leerá la versión que OCS Inventory reporta de cada paquete de esta actualización en este activo y la comparará con la versión objetivo, para cada una de las vulnerabilidades pendientes">{% if g.pendientes == 1 %}Ya se actualizó: comprobar{% else %}Ya se actualizó: comprobar las {{ g.pendientes | numero }}{% endif %}</button>
+              {% if g.es_fusion %}<div class="pequeno tenue">Se comprobarán las {{ g.pendientes | numero }} vulnerabilidad{{ 'es' if g.pendientes != 1 }} que cubre esta actualización en sus {{ g.n_paquetes | numero }} paquetes ({{ g.filas_pendientes | numero }} filas de remediación), una por una.</div>{% elif g.pendientes > 1 %}<div class="pequeno tenue">Se comprobarán las {{ g.pendientes | numero }} vulnerabilidades que cubre esta actualización, una por una.</div>{% endif %}
+              </form>
+              {% endif %}
+              {% if not sobre_el_tope %}
+              <details class="mt-8">
+                <summary class="pequeno">Documentar{% if g.notas %} ({{ g.notas | numero }}){% endif %}</summary>
+                <form method="post" action="{{ url_for('remediaciones.nota', remediacion_id=g.remediacion_id) }}" class="mt-8"
+                      data-accion-viva="tabla-remediaciones" data-accion-espera="Guardando la nota…">
+                  <input type="hidden" name="csrf" value="{{ csrf }}">
+                  <input type="hidden" name="volver" value="{{ volver }}">
+                  <input type="hidden" name="alcance" value="grupo">
+                  <div class="campo">
+                    <label for="nota-actualizacion-{{ g.remediacion_id }}">Qué se hizo o qué falta</label>
+                    <textarea id="nota-actualizacion-{{ g.remediacion_id }}" name="texto" rows="3" required
+                              placeholder="Programado para la ventana del sábado; requiere reinicio."></textarea>
+                  </div>
+                  {% if (g.filas_pendientes or 1) > 1 %}<p class="pequeno tenue">La nota se guardará en las {{ g.filas_pendientes | numero }} filas de remediación de esta actualización{% if g.es_fusion %} ({{ g.pendientes | numero }} vulnerabilidad{{ 'es' if g.pendientes != 1 }} en {{ g.n_paquetes | numero }} paquetes){% endif %}.</p>{% endif %}
+                  <button class="btn pequeno" type="submit">Guardar nota{% if (g.pendientes or 1) > 1 %} en las {{ g.pendientes | numero }}{% endif %}</button>
+                </form>
+              </details>
+              {% endif %}
+              {% else %}
+              {# Sin ninguna remediación en el grupo no hay nada sobre lo que actuar; no se
+                 pinta un formulario que no podría enviarse a ninguna parte. #}
+              <span class="tenue">—</span>
+              {% endif %}
+            </td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {#
+      El pie nombra lo que se lista: en esta vista cada fila es una ACTUALIZACIÓN, no una
+      vulnerabilidad. Decía «19.284 remediaciones» a veinte píxeles de una cabecera que
+      decía «19.284 actualizaciones que cubren 47.526 remediaciones»: la misma palabra para
+      dos magnitudes distintas, que es justo la ambigüedad de la que se quejó el usuario
+      (revisión del 2026-09-08).
+    #}
+    {{ paginacion('remediaciones.lista', args, pagina, paginas, total, por_pagina,
+                  singular='actualización', plural='actualizaciones', ancla='tabla-remediaciones', zona='tabla-remediaciones',
+                  titulo='Paginación de las actualizaciones') }}
+    <p class="pequeno tenue centrado">Cada fila es una actualización (un activo y un origen de paquete): {{ total_actualizaciones | numero }} en total, que salen de {{ total_vulnerabilidades | numero }} fila{{ 's' if total_vulnerabilidades != 1 }} de remediación. Con la vista «Por vulnerabilidad» se listan esas filas de una en una, una por activo, amenaza y paquete.</p>
+
+    {# ------------------------------------------------- vista por vulnerabilidad #}
+    {% elif filas %}
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead>
+          <tr><th class="minw-110" title="Identificador con el que referirse a esta vulnerabilidad en este activo">Remediación número</th>
+            <th>Estado</th><th class="minw-180">Activo</th><th class="minw-200">Amenaza</th><th>Severidad</th><th>Paquete y versión vulnerable</th><th>Versión corregida</th><th>Detectada</th><th>Corregida</th><th class="num minw-100" title="Hasta la corrección si está corregida; hasta la última sincronización que vio el activo si el activo está retirado; hasta hoy si sigue pendiente">Días esperando</th>
+            {% if puede_remediar %}<th class="minw-200">Acciones sobre la vulnerabilidad</th>{% endif %}</tr>
+        </thead>
+        <tbody>
+        {% for r in filas %}
+          <tr>
+            <td class="mono pequeno nowrap" id="rem-{{ r.id }}">{{ r.id }}</td>
+            <td class="nowrap">
+              <span class="insignia {{ r.estado_clave }}">{{ r.estado_es }}</span>
+              {% if r.estado == 'corregida' and r.desinstalado %}<div class="pequeno tenue">por desinstalación</div>{% endif %}
+              {#
+                Riesgo aceptado (2026-09-10). Una excepción vigente saca la fila de esta
+                cola, así que aquí no debería verse ninguna; si alguna se ve, se marca con
+                su insignia y con la fecha en texto (nunca solo en un «title»): la
+                insignia lleva «nowrap» y una frase dentro estiraría la tabla.
+              #}
+              {% if r.riesgo_aceptado %}
+              <div class="mt-8">
+                <span class="insignia medio">Riesgo aceptado{{ ' (permanente)' if r.riesgo_aceptado.permanente }}</span>
+                <div class="pequeno tenue">{% if r.riesgo_aceptado.permanente %}sin fecha de vencimiento{% else %}hasta el {{ r.riesgo_aceptado.vence_at | fecha_es }}{% endif %} · lo acepta {{ r.riesgo_aceptado.responsable_nombre }} · <a href="{{ url_for('excepciones.lista', q=r.cve) }}">ver la excepción</a></div>
+              </div>
+              {% endif %}
+            </td>
+            <td>
+              <a href="{{ url_for('activos.detalle', activo_id=r.activo_id) }}">{{ r.activo_nombre }}</a>
+              <div class="pequeno tenue">{% if r.ip %}<span class="mono">{{ r.ip }}</span> · {% endif %}{{ r.entorno_es }}{% if r.proceso %} · {{ r.proceso }}{% endif %}</div>
+            </td>
+            <td>
+              {% if r.threat_id %}<a href="{{ url_for('amenazas.detalle', threat_id=r.threat_id) }}">{{ r.titulo | recortar(64) }}</a>{% else %}{{ r.titulo | recortar(64) }}{% endif %}
+              <div class="pequeno tenue mono">{{ r.cve }}</div>
+              {% if r.estado_amenaza and r.estado_amenaza != 'nueva' %}<div class="pequeno tenue">Amenaza: {{ r.estado_amenaza_es }}</div>{% endif %}
+            </td>
+            <td class="nowrap">
+              {% if r.severity %}<span class="insignia {{ r.severity | lower }}">{{ r.severity | severidad_es }}</span>{% endif %}
+              {% if r.in_kev %}<span class="insignia kev" title="Explotación activa confirmada por CISA">KEV</span>{% endif %}
+            </td>
+            <td class="pequeno"><span class="mono">{{ r.paquete or '—' }}</span>{% if r.version_vulnerable %}<div class="mono tenue">{{ r.version_vulnerable }}</div>{% endif %}{% if r.msrc %}<div class="tenue">actualización acumulativa de Windows (boletines de Microsoft)</div>{% endif %}</td>
+            <td class="mono pequeno">{{ r.version_corregida or '—' }}</td>
+            <td class="pequeno nowrap" title="Última comprobación: {{ r.comprobado_at | fecha_es(con_hora=True) }}">{{ r.detectado_at | fecha_es }}</td>
+            <td class="pequeno">
+              {% if r.estado == 'corregida' %}
+                {{ r.corregido_at | fecha_es }}
+                {% if r.version_final %}<div class="mono tenue">{{ r.version_final }}</div>{% endif %}
+                {% if r.cerrado_motivo %}<div class="tenue">{{ r.cerrado_motivo | recortar(140) }}</div>{% endif %}
+              {% elif r.estado == 'activo_ausente' %}
+                <span class="tenue">{{ r.cerrado_motivo or 'El activo ya no figura en OCS Inventory' }}</span>
+              {% else %}
+                <span class="tenue">pendiente{% if r.cerrado_motivo %} · {{ r.cerrado_motivo | recortar(140) }}{% endif %}</span>
+              {% endif %}
+            </td>
+            <td class="num" title="{% if r.estado == 'corregida' %}Días entre la detección y la corrección{% elif r.estado == 'activo_ausente' %}Días entre la detección y la última sincronización que vio el activo{% else %}Días desde la detección hasta hoy{% endif %}">{{ r.dias | numero }}</td>
+            {% if puede_remediar %}
+            <td class="pequeno">
+              {# Las mismas dos acciones que en la ficha del activo, aquí por vulnerabilidad. #}
+              {% if r.comprobacion_veredicto %}
+              <div class="mb-6">
+                <span class="insignia {{ comprobacion_clave.get(r.comprobacion_veredicto, 'neutra') }}" title="{{ comprobacion_es.get(r.comprobacion_veredicto, r.comprobacion_veredicto) }}">{{ comprobacion_corto.get(r.comprobacion_veredicto, r.comprobacion_veredicto) }}</span>
+                <div class="pequeno tenue">{{ comprobacion_es.get(r.comprobacion_veredicto, r.comprobacion_veredicto) }}. Comprobado {{ r.comprobacion_at | hace }}{% if r.comprobacion_pedida_por %}, a petición de {{ r.comprobacion_pedida_por }}{% endif %}</div>
+              </div>
+              {% endif %}
+              {% if r.notas %}<div class="pequeno tenue">{{ r.notas | numero }} nota{{ 's' if r.notas != 1 }} documentada{{ 's' if r.notas != 1 }}</div>{% endif %}
+              {% if r.estado != 'corregida' %}
+              <form method="post" action="{{ url_for('remediaciones.comprobar', remediacion_id=r.id) }}" class="inline"
+                    data-accion-viva="tabla-remediaciones" data-accion-espera="Comprobando…"
+                    data-accion-tiempo="120000">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <input type="hidden" name="volver" value="{{ volver }}">
+                <button class="btn pequeno" type="submit"
+                        title="La plataforma leerá la versión que OCS Inventory reporta de este paquete en este activo y la comparará con la que corrige el fallo">Ya está remediada: comprobar</button>
+              </form>
+              {% endif %}
+              <details class="mt-8">
+                <summary class="pequeno">Documentar{% if r.notas %} ({{ r.notas | numero }}){% endif %}</summary>
+                <form method="post" action="{{ url_for('remediaciones.nota', remediacion_id=r.id) }}" class="mt-8"
+                      data-accion-viva="tabla-remediaciones" data-accion-espera="Guardando la nota…">
+                  <input type="hidden" name="csrf" value="{{ csrf }}">
+                  <input type="hidden" name="volver" value="{{ volver }}">
+                  <div class="campo">
+                    <label for="nota-{{ r.id }}">Qué se hizo o qué falta</label>
+                    <textarea id="nota-{{ r.id }}" name="texto" rows="3" required
+                              placeholder="Programado para la ventana del sábado; requiere reinicio."></textarea>
+                  </div>
+                  <button class="btn pequeno" type="submit">Guardar nota</button>
+                </form>
+              </details>
+            </td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {{ paginacion('remediaciones.lista', args, pagina, paginas, total, por_pagina,
+                  singular='remediación', plural='remediaciones', ancla='tabla-remediaciones',
+                  titulo='Paginación de las remediaciones') }}
+    {% else %}
+    <div class="vacio">
+      <p>{% if filtros.estado == 'abierta' and not filtros.q and not filtros.proceso %}No hay remediaciones pendientes.{% else %}Ninguna remediación coincide con los filtros.{% endif %}</p>
+      <p class="pequeno">Las remediaciones se abren en cada sincronización con OCS Inventory cuando la evaluación confirma la versión vulnerable en un activo, y se cierran solas cuando la siguiente ve la corrección.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

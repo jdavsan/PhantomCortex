@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% block titulo %}Remediación{% endblock %}
+{% block contenido %}
+{#
+  Plan de remediación: para una amenaza (todos los activos con la versión vulnerable) o
+  para un activo (todas sus vulnerabilidades). Agrupa por sistema y paquete y da la orden
+  concreta. Desde el 2026-09-09 los grupos con la misma orden (mismo sistema, mismos
+  paquetes, misma versión objetivo y mismos activos) se juntan en uno con
+  ``fusionar_plan`` (threatintel.remediacion), la misma regla que la página de
+  Remediación: el núcleo con 32 CVE es UN grupo «Núcleo Linux 6.8.0-60-generic», no 32.
+
+  La fusión la hace ya ``aplicabilidad.plan_remediacion``, así que la trae también la
+  descarga en texto: la página decía «40 grupos de remediación» y el fichero descargado
+  traía 105 bloques, que es la duplicidad que el usuario reclamó (revisión del
+  2026-09-09). Aquí se repite —``fusionar_plan`` es idempotente— porque para un perfil
+  acotado a un tipo de máquina el plan se recorta después de fusionarlo y dos grupos
+  pueden quedar iguales al quitar los activos del otro tipo.
+  Sin style= ni on*= (CSP estricta).
+#}
+{% set grupos_plan = fusionar_plan(plan.grupos) if fusionar_plan is defined else plan.grupos %}
+{#
+  Cifras del plan de UN activo (2026-09-15, punto 1 de la revisión de claridad). Las
+  tarjetas hablaban de «activos por corregir» y «en producción o contingencia» en el plan
+  de una sola máquina, donde esas cifras solo pueden valer 1 o 0 y no dicen nada; ahora
+  hablan de ese activo: paquetes por actualizar, vulnerabilidades que cierran y avisos
+  implicados. Se calculan aquí, sobre los grupos ya fusionados, para que coincidan con lo
+  que se lee debajo.
+#}
+{% set ns_plan = namespace(paquetes=[], cves=[], avisos=[]) %}
+{% for g in grupos_plan %}
+  {% for pq in (g.paquetes or []) %}{% if pq not in ns_plan.paquetes %}{% set ns_plan.paquetes = ns_plan.paquetes + [pq] %}{% endif %}{% endfor %}
+  {% for cv in (g.cves or []) %}{% if cv not in ns_plan.cves %}{% set ns_plan.cves = ns_plan.cves + [cv] %}{% endif %}{% endfor %}
+  {% for av in (g.avisos or []) %}{% if av not in ns_plan.avisos %}{% set ns_plan.avisos = ns_plan.avisos + [av] %}{% endif %}{% endfor %}
+{% endfor %}
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Plan de remediación" data-tour-texto="Qué hay que corregir y en qué orden. Los activos con la versión vulnerable se agrupan por sistema y paquete, con la orden concreta que los corrige. Primero los de producción y contingencia. «Descargar como texto» genera el plan para quien lo va a ejecutar.">
+  <div>
+    <h1>{{ titulo }}</h1>
+    <p>{% if amenaza %}Activos con la versión vulnerable de <span class="mono">{{ plan.cves | join(', ') }}</span>,
+       agrupados por sistema y origen de paquete con la orden que los corrige. Primero los de producción y contingencia.
+       {%- else %}Todo lo que hay que actualizar en <strong>{{ activo.nombre }}</strong>{% if activo.ip %} (<span class="mono">{{ activo.ip }}</span>){% endif %},
+       agrupado por origen de paquete: una orden por grupo, a la última versión que piden los avisos.{% endif %}</p>
+    {# Siglas explicadas la primera vez que se pueden leer: los avisos de cada grupo se
+       citan por su identificador oficial (revisión visual del 2026-09-09). #}
+    <p class="pequeno tenue">Cada grupo cita los avisos oficiales que piden la actualización:
+      <abbr title="Debian Security Advisory: aviso de seguridad de Debian">DSA</abbr>,
+      <abbr title="Ubuntu Security Notice: aviso de seguridad de Ubuntu">USN</abbr>,
+      <abbr title="Debian Long Term Support Advisory: aviso de seguridad del soporte extendido de Debian">DLA</abbr>
+      o el identificador del aviso de FreeBSD.</p>
+  </div>
+  <div class="acciones-titulo">
+    {% if amenaza %}
+      <a class="btn" href="{{ url_for('amenazas.remediacion', threat_id=amenaza.id, formato='txt') }}">Descargar como texto</a>
+      <a class="btn" href="{{ url_for('amenazas.detalle', threat_id=amenaza.id) }}">Volver a la amenaza</a>
+    {% else %}
+      <a class="btn" href="{{ url_for('activos.remediacion', activo_id=activo.id, formato='txt') }}">Descargar como texto</a>
+      <a class="btn" href="{{ url_for('activos.detalle', activo_id=activo.id) }}">Volver al activo</a>
+    {% endif %}
+  </div>
+</div>
+
+{#
+  Activo retirado de OCS Inventory (2026-09-15, punto 1 de la revisión de claridad). El
+  aviso va ANTES de las cifras, igual que en la ficha del activo, y no solo al final:
+  esta página enseñaba «0 paquetes por actualizar · 0 vulnerabilidades que cierran ·
+  0 avisos implicados · 0 actualizaciones por aplicar» como primera lectura, mientras la
+  ficha del mismo activo decía 142 remediaciones congeladas. Los cuatro ceros eran
+  ciertos y engañosos: no hay plan porque no hay activo que evaluar, no porque no quede
+  nada que corregir. Ámbar, como el resto de lo que rodea a un activo retirado.
+#}
+{% if retirado is defined and retirado %}
+<div class="aviso aviso-nivel" role="status">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+  <div><strong>No hay plan de remediación para este activo: ya no figura en OCS Inventory{% if retirado.desde %} desde el {{ retirado.desde | fecha_es }} ({{ retirado.desde | hace }}){% endif %}.</strong>
+    Sus {{ retirado.vulnerabilidades | numero }} vulnerabilidad{{ 'es' if retirado.vulnerabilidades != 1 }}
+    confirmada{{ 's' if retirado.vulnerabilidades != 1 }} y sus {{ retirado.congeladas | numero }}
+    remediaci{{ 'ón' if retirado.congeladas == 1 else 'ones' }} congelada{{ 's' if retirado.congeladas != 1 }}
+    quedaron con el último dato conocido y no se pueden ni confirmar ni cerrar, porque no llega inventario
+    nuevo con el que compararlas. Si la máquina sigue en servicio, hay que revisar su agente de OCS
+    Inventory; si se dio de baja, no hay nada que hacer.
+    <a href="{{ url_for('activos.detalle', activo_id=activo.id) }}">Ver la ficha del activo</a>.</div>
+</div>
+{% endif %}
+
+<div class="rejilla {{ 'c2' if retirado is defined and retirado else ('c4' if not amenaza else 'c3') }} mb-18" data-tour="2" data-tour-titulo="Alcance del plan" data-tour-texto="En el plan de una amenaza: cuántos activos tienen instalada la versión vulnerable, cuántos están en producción o contingencia y en cuántas órdenes se reparte el trabajo. En el plan de un activo: cuántos paquetes hay que actualizar en esa máquina, cuántas vulnerabilidades se cierran al hacerlo y cuántos avisos oficiales lo piden. Sale de la última evaluación de aplicabilidad, así que puede no coincidir con «Actualizaciones pendientes» de la ficha del activo, que cuenta la cola de remediación.">
+  {% if retirado is defined and retirado %}
+  <div class="panel metrica medio">
+    <div class="valor">{{ retirado.congeladas | numero }}</div>
+    <div class="etiqueta">{{ 'Remediación congelada' if retirado.congeladas == 1 else 'Remediaciones congeladas' }}</div>
+    <div class="nota">la misma cifra que la ficha del activo: ninguna se puede confirmar ni cerrar mientras
+      el activo no vuelva a aparecer en OCS Inventory</div>
+  </div>
+  <div class="panel metrica {{ 'medio' if retirado.vulnerabilidades else 'neutro' }}">
+    <div class="valor">{{ retirado.vulnerabilidades | numero }}</div>
+    <div class="etiqueta">{{ 'Vulnerabilidad confirmada' if retirado.vulnerabilidades == 1 else 'Vulnerabilidades confirmadas' }}</div>
+    <div class="nota">una por CVE, las del <strong>último inventario conocido</strong>{% if retirado.desde %}, el del {{ retirado.desde | fecha_es }}{% endif %}:
+      hoy no se pueden ni confirmar ni descartar</div>
+  </div>
+  {% elif amenaza %}
+  <div class="panel metrica {% if plan.total_activos %}critico{% else %}neutro{% endif %}">
+    <div class="valor">{{ plan.total_activos | numero }}</div>
+    <div class="etiqueta">{{ 'Activo por corregir' if plan.total_activos == 1 else 'Activos por corregir' }}</div>
+    <div class="nota">con la versión vulnerable instalada</div>
+  </div>
+  <div class="panel metrica {% if plan.total_expuestos %}alto{% else %}neutro{% endif %}">
+    <div class="valor">{{ plan.total_expuestos | numero }}</div>
+    <div class="etiqueta">Activos en producción o contingencia</div>
+    <div class="nota">los primeros en el plan</div>
+  </div>
+  {% else %}
+  <div class="panel metrica {% if ns_plan.paquetes %}critico{% else %}neutro{% endif %}">
+    <div class="valor">{{ ns_plan.paquetes | length | numero }}</div>
+    <div class="etiqueta">{{ 'Paquete por actualizar' if ns_plan.paquetes | length == 1 else 'Paquetes por actualizar' }}</div>
+    <div class="nota">en este activo, contando una vez cada paquete aunque lo pidan varios avisos</div>
+  </div>
+  <div class="panel metrica {% if ns_plan.cves %}alto{% else %}neutro{% endif %}">
+    <div class="valor">{{ ns_plan.cves | length | numero }}</div>
+    <div class="etiqueta">{{ 'Vulnerabilidad que cierra' if ns_plan.cves | length == 1 else 'Vulnerabilidades que cierran' }}</div>
+    <div class="nota">una por CVE; aplicar el plan entero las resuelve todas</div>
+  </div>
+  <div class="panel metrica neutro">
+    <div class="valor">{{ ns_plan.avisos | length | numero }}</div>
+    <div class="etiqueta">{{ 'Aviso implicado' if ns_plan.avisos | length == 1 else 'Avisos implicados' }}</div>
+    <div class="nota">boletines oficiales distintos que piden estas actualizaciones</div>
+  </div>
+  {% endif %}
+  {#
+    Se llaman ACTUALIZACIONES, igual que en la ficha del activo y en la página de
+    Remediación: decía «grupos de remediación», una unidad que no existía en ninguna otra
+    pantalla (revisión visual del 2026-09-09). Y desde ese mismo día la versión NO entra en
+    la clave de la fusión (threatintel.remediacion.fusionar_plan): un paquete con siete
+    versiones solicitadas daba SIETE órdenes, que es lo que el usuario rechazó («que la
+    remediación indique sí o sí la última versión a la que se debe actualizar y no una por
+    una»). Ahora es UNA orden a la versión más alta, con la cola completa debajo, y para el
+    plan de un activo la cifra coincide con las «Actualizaciones pendientes» de su ficha
+    (28 en el servidor SRV-EJEMPLO-511, donde antes decía 35).
+  #}
+  {# Para un activo retirado esta tarjeta no se pinta: «0 actualizaciones por aplicar» se
+     lee como «ya no queda nada que corregir», y lo que pasa es lo contrario (2026-09-15). #}
+  {% if not (retirado is defined and retirado) %}
+  <div class="panel metrica {% if not grupos_plan %}neutro{% endif %}">
+    <div class="valor">{{ grupos_plan | length | numero }}</div>
+    <div class="etiqueta">{{ 'Actualización por aplicar' if grupos_plan | length == 1 else 'Actualizaciones por aplicar' }}</div>
+    {# «trae estas mismas 0» era una frase incompleta cuando el plan estaba vacío
+       (revisión de claridad del 2026-09-15): sin órdenes no hay nada que descargar. #}
+    <div class="nota">{% if grupos_plan %}una orden por sistema y origen de paquete, a la última versión que piden los avisos{% if amenaza %}, común a todos los activos del grupo{% endif %}; «Descargar como texto» trae {{ 'esa misma orden' if grupos_plan | length == 1 else 'esas mismas ' ~ (grupos_plan | length | numero) ~ ' órdenes' }}{% else %}no hay ninguna orden que ejecutar, así que «Descargar como texto» no traería ninguna{% endif %}</div>
+  </div>
+  {% endif %}
+</div>
+
+{% if grupos_plan %}
+{% for g in grupos_plan %}
+<div class="panel"{% if loop.first %} data-tour="3" data-tour-titulo="Un grupo de remediación" data-tour-texto="Cada grupo reúne los activos con el mismo sistema y los mismos paquetes vulnerables que corrige una misma orden: los binarios del mismo origen (por ejemplo los del núcleo) y todos los CVE que esa versión resuelve van juntos. La orden está lista para copiar y ejecutar en cada activo; debajo, la lista de activos del grupo con su entorno y la versión instalada."{% endif %}>
+  <div class="panel-cabecera">
+    <h2>{{ loop.index }}. {{ g.sistema or g.familia }} · {% if g.es_fusion %}<span class="nombre-actualizacion">{{ g.nombre }}</span>{% else %}<span class="mono">{{ g.paquetes | join(', ') | recortar(80) }}</span>{% endif %}</h2>
+    {% if g.grupos_fusionados and g.grupos_fusionados > 1 %}<span class="sub">Una sola orden para {{ g.grupos_fusionados | numero }} avisos que pedían lo mismo en los mismos activos.</span>{% endif %}
+    <span class="sub">{{ g.n_activos | numero }} activo{{ 's' if g.n_activos != 1 }} ({{ g.expuestos | numero }} en producción o contingencia){% if g.corregida %} · <strong>actualizar a la versión <span class="mono">{{ g.corregida }}</span></strong>, la última que piden los avisos{% endif %}{% if g.avisos %} · {{ g.avisos | join(', ') | recortar(120) }}{% endif %}{% if not amenaza %} · {{ g.cves | length | numero }} vulnerabilidad{{ 'es' if g.cves | length != 1 }}: {{ g.cves | join(', ') | recortar(160) }}{% endif %}</span>
+    {#
+      La cola de versiones solicitadas, cuando los avisos pidieron más de una: instalar la
+      más alta resuelve todas. Sin esta línea, una sola orden para siete versiones parecía
+      que dejaba seis avisos sin atender (revisión del 2026-09-09).
+    #}
+    {% if (g.versiones_pedidas or 1) > 1 %}
+    <details class="paquetes-fusion">
+      <summary>{{ g.versiones_pedidas | numero }} versiones solicitadas por los avisos: una sola orden a la más alta las resuelve todas</summary>
+      <ol class="lista-lineas cola-versiones">
+        {% for v in g.cola_versiones %}
+        <li{% if loop.first %} class="cola-objetivo"{% endif %}><span class="mono">{{ v }}</span>{% if loop.first %} · <strong>la que hay que instalar</strong>{% else %} · ya resuelta al instalar la anterior{% endif %}</li>
+        {% endfor %}
+      </ol>
+    </details>
+    {% endif %}
+    {% if g.es_fusion %}
+    <details class="paquetes-fusion">
+      <summary>{{ g.paquetes | length | numero }} paquetes del mismo origen: una sola orden los actualiza</summary>
+      <ul class="lista-lineas">{% for p in g.paquetes %}<li><span class="mono">{{ p }}</span></li>{% endfor %}</ul>
+    </details>
+    {% endif %}
+  </div>
+  <div class="panel-cuerpo">
+    <div class="campo">
+      <label for="orden-{{ loop.index }}">Orden a ejecutar en cada activo</label>
+      <input type="text" id="orden-{{ loop.index }}" class="mono" value="{{ g.comando }}" readonly>
+      <div class="ayuda">{{ g.nota }}</div>
+    </div>
+  </div>
+  <div class="panel-cuerpo sin-relleno borde-arriba">
+    {# Mismo criterio que en la ficha del activo (2026-09-15): un bloque que se desplaza
+       por dentro tiene que poder alcanzarse con el teclado, o su parte derecha queda sin
+       manera de llegar sin ratón (WCAG 2.1, criterio 2.1.1). #}
+    <div class="tabla-envoltorio" tabindex="0" role="region"
+         aria-label="Tabla de los activos de esta actualización, con desplazamiento horizontal">
+      <table class="tabla-compacta">
+        {# Tipo y entorno en columnas separadas desde el 2026-09-07, igual que en Activos. #}
+        <thead><tr><th>Activo</th><th>Tipo</th><th>Entorno</th><th>Proceso</th><th>Paquetes</th><th>Instalada</th></tr></thead>
+        <tbody>
+        {% for a in g.activos %}
+          <tr>
+            <td><a href="{{ url_for('activos.detalle', activo_id=a.id) }}">{{ a.nombre }}</a>{% if a.ip %}<div class="pequeno tenue mono">{{ a.ip | recortar(28) }}</div>{% endif %}</td>
+            <td class="pequeno nowrap">{{ 'Servidor' if a.origen == 'servidores' else 'Equipo de cómputo' }}</td>
+            <td class="pequeno nowrap">{% if a.entorno %}<span class="insignia entorno-{{ a.entorno }}">{{ entorno_es.get(a.entorno, a.entorno) }}</span>{% else %}<span class="tenue">Sin entorno</span>{% endif %}</td>
+            <td class="pequeno tenue">{{ a.proceso or 'Sin proceso' }}</td>
+            {# Una linea por paquete: la version instalada es la de ESE paquete, no la de
+               la primera fila del activo (revision del 2026-09-06). #}
+            <td class="mono pequeno envolver">
+              {%- for d in (a.paquetes_detalle or []) %}<div>{{ d.paquete | recortar(40) }}</div>{% else %}{{ a.paquetes | join(', ') }}{% endfor -%}
+            </td>
+            <td class="mono pequeno">
+              {%- for d in (a.paquetes_detalle or []) %}<div>{{ d.instalada or '—' }}</div>{% else %}{{ a.instalada or '—' }}{% endfor -%}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endfor %}
+<div class="panel">
+  <div class="panel-pie">
+    Tras aplicar la orden, la siguiente sincronización con OCS Inventory recoge las versiones nuevas y la
+    reevaluación diaria pasa los activos a «no afectado». Si la vulnerabilidad se mitiga de otra forma
+    (aislamiento, configuración), márquela como «mitigada» en la ficha de la amenaza.
+  </div>
+</div>
+{% else %}
+<div class="panel"><div class="vacio">
+  {% if retirado is defined and retirado %}
+  <p>Este activo ya no figura en OCS Inventory{% if retirado.desde %} desde el {{ retirado.desde | fecha_es }}{% endif %}: no hay plan que aplicar.</p>
+  <p class="pequeno">Sus {{ retirado.vulnerabilidades | numero }} vulnerabilidad{{ 'es' if retirado.vulnerabilidades != 1 }}
+    confirmada{{ 's' if retirado.vulnerabilidades != 1 }} y sus {{ retirado.congeladas | numero }}
+    remediaci{{ 'ón' if retirado.congeladas == 1 else 'ones' }} quedaron congeladas con el último dato conocido:
+    ni se pueden confirmar ni cerrar. Si la máquina sigue en servicio, hay que revisar su agente de OCS Inventory;
+    si se dio de baja, no hay nada que hacer.
+    <a href="{{ url_for('activos.detalle', activo_id=activo.id) }}">Ver la ficha del activo</a>.</p>
+  {% elif amenaza %}
+  <p>Ningún activo presente tiene instalada la versión vulnerable: nada que remediar.</p>
+  {% else %}
+  <p>Este activo no tiene ninguna actualización pendiente: nada que remediar.</p>
+  <p class="pequeno">La última evaluación de aplicabilidad no encontró en él ninguna versión instalada vulnerable.</p>
+  {% endif %}
+</div></div>
+{% endif %}
+{% endblock %}

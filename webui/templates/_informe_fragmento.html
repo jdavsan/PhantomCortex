@@ -1,0 +1,14 @@
+{#
+  Respuesta de /informes/vista-previa (2026-09-10): solo los dos trozos que cambian al
+  tocar el formulario del generador, sin la página entera ni su armazón.
+
+  Son EXACTAMENTE los mismos parciales que incluye informes.html, así que la vista previa
+  viva no puede decir una cosa y la página recargada otra. El motor de actualización
+  parcial de webui/static/app.js busca aquí los identificadores «campos-informe» y
+  «vista-previa-informe» y sustituye solo los que le pidió el control que se tocó.
+
+  No lleva <html> ni <body> a propósito: no es una página, es un fragmento. Sin
+  JavaScript nadie pide esta dirección.
+#}
+{% include "_informe_campos.html" %}
+{% include "_informe_vista_previa.html" %}

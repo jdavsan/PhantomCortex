@@ -1,0 +1,295 @@
+{#
+  Campos del generador de informes (2026-09-10). Están en un parcial y no dentro de
+  informes.html porque el motor de actualización parcial (webui/static/app.js) los
+  sustituye sin recargar cuando cambia el periodo o el alcance: entonces hay que pedir el
+  mes, el intervalo, el proceso, el activo o la tecnología, y esos campos aparecen y
+  desaparecen. La misma pieza la pinta la página completa y el fragmento
+  /informes/vista-previa, así que no hay dos versiones que se puedan desviar.
+
+  El identificador «campos-informe» es único en la página. Sin JavaScript esta zona no se
+  sustituye nunca: el botón «Actualizar la vista previa» envía el formulario y la página
+  se recarga, exactamente como antes.
+#}
+<div id="campos-informe" data-zona-viva data-zona-nombre="Opciones del informe">
+  <input type="hidden" name="plantilla" value="{{ sel.plantilla }}">
+  {# Marca que los apartados vienen del formulario: sin ella, desmarcarlos todos se
+     entendería como «primera visita» y volverían los de la plantilla. #}
+  <input type="hidden" name="apartados_enviados" value="1">
+
+  <fieldset>
+    <legend>Periodo</legend>
+    <div class="campo-fila">
+      {# El informe ejecutivo mensual es siempre de UN MES: es lo que hace que quepa en
+         diez páginas y lo que permite compararlo con el mes anterior y con el mismo mes
+         del año pasado. Por eso aquí no se ofrece el selector de periodo, solo el mes. #}
+      {% if sel.es_ejecutivo() %}
+      <input type="hidden" name="periodo" value="mes">
+      {% else %}
+      <div class="campo">
+        <label for="periodo">¿Qué periodo cubre el informe?</label>
+        {# data-vivo-zonas: cambiar el periodo cambia también los campos del formulario
+           (hay que pedir el mes, las fechas o el número de días), así que se actualizan
+           las dos zonas y no solo la vista previa. #}
+        <select id="periodo" name="periodo" data-autosubmit aria-describedby="ayuda-periodo"
+                data-vivo-zonas="campos-informe vista-previa-informe">
+          {% for clave, nombre in clases_periodo.items() %}
+            <option value="{{ clave }}" {% if sel.periodo == clave %}selected{% endif %}>{{ nombre }}</option>
+          {% endfor %}
+        </select>
+        <p class="ayuda" id="ayuda-periodo">Al cambiarlo se le pide el dato que
+          corresponda; no se pierde nada de lo que haya escrito.</p>
+      </div>
+      {% endif %}
+      {% if sel.periodo == 'mes' %}
+      <div class="campo">
+        <label for="mes">Mes</label>
+        <select id="mes" name="mes">
+          {% for m in meses %}
+            <option value="{{ m }}" {% if sel.mes == m %}selected{% endif %}>{{ m | mes_es }}</option>
+          {% endfor %}
+        </select>
+        <p class="ayuda">Solo los meses con amenazas registradas.</p>
+      </div>
+      {% else %}
+      <input type="hidden" name="mes" value="{{ sel.mes }}">
+      {% endif %}
+      {% if sel.periodo == 'intervalo' %}
+      <div class="campo">
+        <label for="desde">Desde el día</label>
+        <input type="date" id="desde" name="desde" value="{{ sel.desde }}">
+      </div>
+      <div class="campo">
+        <label for="hasta">Hasta el día</label>
+        <input type="date" id="hasta" name="hasta" value="{{ sel.hasta }}">
+        <p class="ayuda">Los dos días entran en el informe.</p>
+      </div>
+      {% else %}
+      <input type="hidden" name="desde" value="{{ sel.desde }}">
+      <input type="hidden" name="hasta" value="{{ sel.hasta }}">
+      {% endif %}
+      {% if sel.periodo == 'dias' %}
+      <div class="campo">
+        <label for="dias">Número de días</label>
+        <input type="number" id="dias" name="dias" min="1" max="366" value="{{ sel.dias }}">
+        <p class="ayuda">Desde hace ese número de días hasta hoy (máximo 366 días).</p>
+      </div>
+      {% else %}
+      <input type="hidden" name="dias" value="{{ sel.dias }}">
+      {% endif %}
+      {% if sel.periodo == 'trimestre' %}
+      <div class="campo">
+        <label for="trimestre">Trimestre</label>
+        <select id="trimestre" name="trimestre">
+          {% for valor, nombre in opciones_trimestre %}
+            <option value="{{ valor }}" {% if sel.trimestre == valor %}selected{% endif %}>{{ nombre | capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+      <input type="hidden" name="trimestre" value="{{ sel.trimestre }}">
+      {% endif %}
+      {% if sel.periodo == 'semestre' %}
+      <div class="campo">
+        <label for="semestre">Semestre</label>
+        <select id="semestre" name="semestre">
+          {% for valor, nombre in opciones_semestre %}
+            <option value="{{ valor }}" {% if sel.semestre == valor %}selected{% endif %}>{{ nombre | capitalize }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+      <input type="hidden" name="semestre" value="{{ sel.semestre }}">
+      {% endif %}
+      {% if sel.periodo == 'anio' %}
+      <div class="campo">
+        <label for="anio_valor">Año</label>
+        <select id="anio_valor" name="anio_valor">
+          {% for a in anios_disponibles %}
+            <option value="{{ a }}" {% if (sel.anio_valor or anios_disponibles[0]) == a %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+        <p class="ayuda">El año en curso llega hasta hoy; un año anterior entra completo.</p>
+      </div>
+      {% else %}
+      <input type="hidden" name="anio_valor" value="{{ sel.anio_valor }}">
+      {% endif %}
+    </div>
+    <p class="ayuda">Periodo elegido: <strong>{{ periodo_es }}</strong>. Una amenaza entra en el
+      informe por la fecha en que la plataforma la vio por primera vez.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Alcance</legend>
+    {% if sel.es_ejecutivo() %}
+    <input type="hidden" name="alcance" value="organizacion">
+    <input type="hidden" name="proceso" value="">
+    <input type="hidden" name="tipo" value="{{ sel.tipo }}">
+    <input type="hidden" name="activo" value="">
+    <input type="hidden" name="tecnologia" value="">
+    <p class="ayuda">El informe ejecutivo habla siempre de <strong>{{ alcance_es }}</strong>:
+      es un documento de dirección y las cifras que compara (mes contra mes y año contra año)
+      solo tienen sentido sobre el mismo parque completo.
+      {% if alcance_perfil %}Su perfil solo informa de {{ alcance_perfil_es }}, así que el
+        informe queda acotado a esa parte del inventario.{% endif %}</p>
+    {% else %}
+    <div class="campo-fila">
+      <div class="campo">
+        <label for="alcance">¿De qué parte de la organización habla?</label>
+        <select id="alcance" name="alcance" data-autosubmit aria-describedby="ayuda-alcance"
+                data-vivo-zonas="campos-informe vista-previa-informe">
+          {% for clave, nombre in alcances.items() %}
+            <option value="{{ clave }}" {% if sel.alcance == clave %}selected{% endif %}>{{ nombre }}</option>
+          {% endfor %}
+        </select>
+        <p class="ayuda" id="ayuda-alcance">Al cambiarlo se le pide el proceso, el tipo de
+          máquina, el activo o la tecnología.</p>
+      </div>
+      {% if sel.alcance == 'proceso' %}
+      <div class="campo minw-220">
+        <label for="proceso">Proceso de negocio</label>
+        <select id="proceso" name="proceso">
+          <option value="">Elija un proceso…</option>
+          {% for p in procesos %}
+            <option value="{{ p }}" {% if sel.proceso == p %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+        <p class="ayuda">Solo los procesos con vulnerabilidades confirmadas en sus activos.</p>
+      </div>
+      {% else %}
+      <input type="hidden" name="proceso" value="{{ sel.proceso }}">
+      {% endif %}
+      {% if sel.alcance == 'tipo' %}
+      <div class="campo">
+        <label for="tipo">Tipo de máquina</label>
+        <select id="tipo" name="tipo">
+          {% if not alcance_perfil %}<option value="">Elija el tipo…</option>{% endif %}
+          {% for clave, nombre in tipos_maquina.items() %}
+            {% if not alcance_perfil or alcance_perfil == clave %}
+            <option value="{{ clave }}" {% if sel.tipo == clave %}selected{% endif %}>{{ nombre }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+      <input type="hidden" name="tipo" value="{{ sel.tipo }}">
+      {% endif %}
+      {% if sel.alcance == 'activo' %}
+      <div class="campo minw-260">
+        <label for="activo">Activo</label>
+        <select id="activo" name="activo">
+          <option value="">Elija un activo…</option>
+          {% for nombre_grupo, clave_grupo in [('Servidores', 'servidores'), ('Equipos de cómputo', 'equipos')] %}
+            {% set del_grupo = activos_elegibles | selectattr('origen', 'equalto', clave_grupo) | list %}
+            {% if del_grupo %}
+            <optgroup label="{{ nombre_grupo }}">
+              {% for a in del_grupo %}
+                <option value="{{ a.id }}" {% if sel.activo_id == a.id %}selected{% endif %}>{{ a.nombre }}{% if a.proceso %} · {{ a.proceso }}{% endif %} ({{ a.cves | numero }} {% if a.cves == 1 %}vulnerabilidad{% else %}vulnerabilidades{% endif %})</option>
+              {% endfor %}
+            </optgroup>
+            {% endif %}
+          {% endfor %}
+        </select>
+        <p class="ayuda">Solo los activos presentes con alguna vulnerabilidad confirmada.</p>
+      </div>
+      {% else %}
+      <input type="hidden" name="activo" value="{{ sel.activo_id or '' }}">
+      {% endif %}
+      {% if sel.alcance == 'tecnologia' %}
+      <div class="campo minw-220">
+        <label for="tecnologia">Tecnología</label>
+        <select id="tecnologia" name="tecnologia">
+          <option value="">Elija una tecnología…</option>
+          {% for t in tecnologias_elegibles %}
+            <option value="{{ t.slug }}" {% if sel.tecnologia == t.slug %}selected{% endif %}>{{ t.nombre }} ({{ t.amenazas | numero }} {% if t.amenazas == 1 %}amenaza{% else %}amenazas{% endif %})</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+      <input type="hidden" name="tecnologia" value="{{ sel.tecnologia }}">
+      {% endif %}
+    </div>
+    <p class="ayuda">Alcance elegido: <strong>{{ alcance_es }}</strong>.
+      {% if alcance_perfil %}Su perfil solo informa de {{ alcance_perfil_es }}, así que todo
+        informe queda acotado a esa parte del inventario.{% endif %}</p>
+    {% endif %}
+  </fieldset>
+
+  {% if sel.es_ejecutivo() %}
+  {# Severidades y apartados fijos: la estructura del informe ejecutivo es lo que
+     garantiza que no pase de diez páginas y que siga siendo un documento de gerencia.
+     Se envían como campos ocultos para que la selección viaje entera. #}
+  {% for s in sel.severidades %}<input type="hidden" name="sev" value="{{ s }}">{% endfor %}
+  {% for a in sel.apartados %}<input type="hidden" name="apartado" value="{{ a }}">{% endfor %}
+  <fieldset>
+    <legend>Qué lleva el informe ejecutivo</legend>
+    <p class="ayuda">Este informe tiene una estructura fija y no se puede cambiar: es lo que
+      garantiza que no pase de <strong>diez páginas</strong> y que no se le cuelen fichas
+      técnicas. Cuenta las tres severidades que se reportan (crítica, alta y media).</p>
+    <ul class="lista-lineas">
+      {% for a in esquema %}
+      <li><strong>{% if a.numero %}{{ a.numero }}. {% endif %}{{ a.titulo }}</strong>: {{ a.descripcion }}</li>
+      {% endfor %}
+    </ul>
+  </fieldset>
+  {% else %}
+  <fieldset>
+    <legend>Severidades</legend>
+    <div class="campo-fila">
+      {% for s in severidades %}
+      <div class="campo minw-auto">
+        <div class="casilla m-0">
+          <input type="checkbox" id="sev-{{ s | lower }}" name="sev" value="{{ s }}"
+                 {% if s in sel.severidades %}checked{% endif %}>
+          <label for="sev-{{ s | lower }}">Severidad {{ severidad_es_plural[s] }}</label>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="ayuda">Estas son las tres severidades que se reportan, en las cifras y en todos los
+      apartados. Si no marca ninguna se usan las tres.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Apartados del documento</legend>
+    <div class="rejilla c2 apartados-informe">
+      {% for a in apartados_catalogo %}
+      <div class="casilla">
+        <input type="checkbox" id="ap-{{ a.clave }}" name="apartado" value="{{ a.clave }}"
+               {% if a.clave in sel.apartados %}checked{% endif %}>
+        <label for="ap-{{ a.clave }}">{{ a.titulo }}{% if a.pesado %}
+          <span class="insignia neutra">Tarda más</span>{% endif %}
+          <span class="ayuda">{{ a.descripcion }}</span></label>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="ayuda">Marque los que quiera, en cualquier combinación: no hay ninguno obligatorio
+      y no depende de ninguna plantilla. Se escriben siempre en el orden del informe, marque el
+      que marque primero, y se numeran seguidos; el esquema de la vista previa muestra el orden
+      y la numeración reales. Los marcados como «tarda más» recorren las amenazas o los
+      activos uno a uno.</p>
+  </fieldset>
+  {% endif %}
+
+  <fieldset>
+    <legend>Portada</legend>
+    <div class="campo-fila">
+      <div class="campo flex2-220">
+        <label for="titulo">Título del documento</label>
+        <input type="text" id="titulo" name="titulo" maxlength="120" value="{{ sel.titulo }}"
+               placeholder="Informe mensual de inteligencia de amenazas">
+      </div>
+      <div class="campo minw-220">
+        <label for="destinatario">Destinatario</label>
+        <input type="text" id="destinatario" name="destinatario" maxlength="120"
+               value="{{ sel.destinatario }}" placeholder="Gerencia, Redes…">
+      </div>
+    </div>
+    <div class="campo">
+      <label for="nota">Nota para la portada</label>
+      <textarea id="nota" name="nota" maxlength="600" rows="2"
+                placeholder="Texto libre que aparecerá en la portada, debajo del periodo.">{{ sel.nota }}</textarea>
+      <p class="ayuda">Hasta 600 caracteres. Aparece solo si el documento lleva portada.
+        {% if sel.es_ejecutivo() %}El informe ejecutivo la lleva siempre.{% endif %}</p>
+    </div>
+  </fieldset>
+</div>

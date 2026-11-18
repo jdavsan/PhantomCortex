@@ -1,0 +1,73 @@
+# Fuentes de inventario múltiples - integración con OCS Inventory y otros orígenes
+#
+# INSTRUCCIONES:
+# 1. Si este fichero NO existe, se cargan automáticamente los dos inventarios OCS por defecto.
+# 2. Si EXISTE, se cargan SOLO las fuentes definidas aquí (descomenta u omite OCS según necesites).
+# 3. Cada fuente debe tener: nombre (único), tipo (ocs_mysql|csv) y configuración específica.
+# 4. Las credenciales se leen del fichero config/credentials.env usando el prefijo indicado.
+
+fuentes:
+  # ============ INVENTARIOS OCS INVENTORY (MariaDB) ============
+  # Tipo: ocs_mysql
+  # Lectura: directa desde la BD MariaDB de OCS Inventory
+  # Credenciales esperadas en credentials.env:
+  #   OCS_SERVIDORES_HOST, OCS_SERVIDORES_PORT, OCS_SERVIDORES_USER, OCS_SERVIDORES_PASSWORD, OCS_SERVIDORES_DB
+
+  - nombre: servidores
+    tipo: ocs_mysql
+    prefijo_credenciales: OCS_SERVIDORES
+    # Descripción: servidores (extrae de OCS: nombre, IP, SO, procesos, software instalado)
+
+  - nombre: equipos
+    tipo: ocs_mysql
+    prefijo_credenciales: OCS_EQUIPOS
+    # Descripción: estaciones de trabajo y portátiles (extrae de OCS: igual que servidores)
+
+  # ============ INVENTARIOS CSV (IMPORTACIÓN GENÉRICA) ============
+  # Tipo: csv
+  # Lectura: desde fichero CSV con columnas personalizables
+  # Mapeo: fichero YAML que define qué columna CSV → qué campo del inventario
+  # Ubicación: colocar fichero CSV en data/importados/ (crear directorio si no existe)
+
+  # Ejemplo: importar desde GLPI (IT service management)
+  # - nombre: glpi_activos
+  #   tipo: csv
+  #   ruta: data/importados/glpi_activos.csv
+  #   mapeo: config/mapeos/glpi.yml
+
+  # Ejemplo: importar desde otro CMDB o base de datos
+  # - nombre: cmdb_externa
+  #   tipo: csv
+  #   ruta: data/importados/cmdb_activos.csv
+  #   mapeo: config/mapeos/cmdb.yml
+
+# ============ DEFINICIÓN DE MAPEOS CSV ============
+# Crear ficheros YAML en config/mapeos/ con este contenido (ajustar columnas a tu CSV):
+#
+# # config/mapeos/glpi.yml
+# nombre: glpi_activos
+# campos_obligatorios:
+#   nombre:
+#     columna: "Name"
+#     transformar: ""  # opcional: "upper", "lower", o función personalizada
+#   ip:
+#     columna: "IP Address"
+#   hostname:
+#     columna: "Hostname"
+# campos_opcionales:
+#   origen:
+#     columna: "Clase"
+#   proceso:
+#     columna: "Department"
+#
+# COLUMNAS CSV ESPERADAS (como mínimo):
+# - Nombre del activo
+# - IP (puede estar vacío)
+# - Hostname o FQDN
+# - Software instalado (versiones, paquetes)
+# - Proceso de negocio / Departamento (opcional)
+#
+# EXPORTAR DESDE OTROS SISTEMAS:
+# - GLPI: Administration → Export → Computers (CSV)
+# - Altiris/ServiceNow: Reports → Export to CSV
+# - Excel: Guardar Como → CSV (separador comas)

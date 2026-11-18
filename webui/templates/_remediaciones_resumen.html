@@ -1,0 +1,80 @@
+{# Parcial de la pagina Activos: resumen de remediacion (actualizaciones pendientes,
+   vulnerabilidades pendientes, corregidas en el periodo, tiempo medio, activos con
+   pendientes). Recibe ``remediacion_resumen`` de threatintel.remediacion.resumen.
+   Desde el 2026-09-09 las dos primeras cifras son las mismas que en Remediación: una
+   actualización por activo y origen de paquete, y una vulnerabilidad por par (activo, CVE);
+   las filas de remediación (una por activo, CVE y paquete) se dicen en la nota, no como
+   cifra principal. Sin style= ni on*= (CSP). #}
+{#
+  Las dos cifras de activos de esta página usan ya el mismo criterio (2026-09-10): tanto
+  «Con vulnerabilidades confirmadas», arriba, como «Activos con pendientes», aquí, dejan
+  fuera la severidad baja, que no cuenta en nada.
+
+  Si aun así no coinciden, la diferencia son activos con alguna remediación pendiente que
+  la evaluación de aplicabilidad todavía no ha vuelto a confirmar (por ejemplo, porque la
+  consulta a OSV.dev agotó el cupo del día) o cuya amenaza se descartó a mano: una
+  remediación no se cierra por ninguna de esas dos cosas, espera a que OCS Inventory vea
+  la corrección instalada. Medido sobre la base real el 2026-09-10: 601 activos con
+  pendientes y 597 con vulnerabilidades confirmadas, 4 de diferencia por ese motivo.
+#}
+{% set activos_pendientes = remediacion_resumen.activos_con_abiertas if remediacion_resumen else 0 %}
+{% set activos_confirmados = resumen.con_vulnerabilidades if resumen is defined and resumen else none %}
+{% set diferencia_activos = (activos_pendientes - activos_confirmados) if activos_confirmados is not none else 0 %}
+{% if remediacion_resumen and (remediacion_resumen.abiertas or remediacion_resumen.corregidas_periodo) %}
+<div class="panel mb-18" id="remediacion-resumen" data-tour="8" data-tour-titulo="Remediación" data-tour-texto="Cuántas actualizaciones siguen pendientes en los activos (una por activo y origen de paquete: los binarios del mismo paquete fuente, como los del núcleo, cuentan como una), cuántas vulnerabilidades distintas cubren, cuántas remediaciones se corrigieron en el periodo y cuánto se tardó de media. Se cierran solas cuando OCS Inventory ve la versión corregida; la página de remediación las detalla por activo, CVE y proceso.">
+  <div class="panel-cabecera">
+    <h2>Remediación</h2>
+    <div class="panel-acciones">
+      <a class="btn pequeno" href="{{ url_for('remediaciones.lista') }}">Ver remediación</a>
+    </div>
+    <span class="sub">Una actualización por activo y origen de paquete; una vulnerabilidad por activo y CVE; una fila de remediación por activo, amenaza y paquete. Se cierran solas cuando la siguiente sincronización con OCS Inventory ve la corrección.
+      {% if diferencia_activos > 0 %}
+      <strong>Por qué las dos cifras de activos no coinciden exactamente:</strong> «Con vulnerabilidades confirmadas», arriba, dice
+      {{ activos_confirmados | numero }} y «Activos con pendientes», aquí abajo, dice {{ activos_pendientes | numero }}.
+      Las dos cuentan con el mismo criterio de severidad (crítica, alta y media). La diferencia son
+      {{ diferencia_activos | numero }} activo{{ 's' if diferencia_activos != 1 }} cuyas remediaciones pendientes esperan
+      una evaluación nueva o cuya amenaza se descartó a mano: la plataforma no cierra una remediación por
+      ninguna de esas dos cosas, espera a que OCS Inventory vea la versión corregida instalada.
+      {% endif %}</span>
+  </div>
+  <div class="panel-cuerpo">
+    <div class="rejilla c5">
+      <div class="metrica {% if remediacion_resumen.actualizaciones %}critico{% else %}neutro{% endif %}">
+        <div class="valor">{{ remediacion_resumen.actualizaciones | numero }}</div>
+        <div class="etiqueta">Actualizaciones pendientes</div>
+        <div class="nota">una por activo y origen de paquete</div>
+      </div>
+      <div class="metrica {% if remediacion_resumen.vulnerabilidades_unicas %}alto{% else %}neutro{% endif %}">
+        <div class="valor">{{ remediacion_resumen.vulnerabilidades_unicas | numero }}</div>
+        <div class="etiqueta">Vulnerabilidades pendientes</div>
+        <div class="nota">una por activo y CVE; son {{ remediacion_resumen.abiertas | numero }} fila{{ 's' if remediacion_resumen.abiertas != 1 }} de remediación</div>
+      </div>
+      <div class="metrica {% if remediacion_resumen.corregidas_periodo %}exito{% else %}neutro{% endif %}">
+        <div class="valor">{{ remediacion_resumen.corregidas_periodo | numero }}</div>
+        <div class="etiqueta">Corregidas en {{ remediacion_resumen.dias | numero }} días</div>
+        <div class="nota">filas de remediación vistas corregidas por OCS Inventory</div>
+      </div>
+      <div class="metrica neutro">
+        <div class="valor">{% if remediacion_resumen.tiempo_medio_dias is not none %}{{ graficos.fmt(remediacion_resumen.tiempo_medio_dias, 1) }}{% else %}—{% endif %}</div>
+        <div class="etiqueta">Días de media hasta corregir</div>
+        <div class="nota">{% if remediacion_resumen.tiempo_medio_dias is not none %}entre detección y corrección{% else %}sin correcciones en el periodo{% endif %}</div>
+      </div>
+      <div class="metrica {% if remediacion_resumen.activos_con_abiertas %}alto{% else %}neutro{% endif %}">
+        <div class="valor">{{ remediacion_resumen.activos_con_abiertas | numero }}</div>
+        <div class="etiqueta">Activos con pendientes</div>
+        {# La diferencia con «Con vulnerabilidades confirmadas» se explica entera en el
+           «sub» de este panel, que va a todo el ancho; aquí solo se remite a ella, para
+           que las cinco tarjetas conserven la misma altura. #}
+        {#
+          «de cualquier severidad» era falso (auditoría de tableros del 2026-09-15):
+          ``threatintel.remediacion.resumen`` deja fuera la severidad baja desde el
+          2026-09-10 y también las remediaciones cubiertas por una excepción vigente
+          (riesgo aceptado). La nota dice ahora lo que la consulta hace de verdad, con el
+          mismo criterio que la tarjeta «Con vulnerabilidades confirmadas» de arriba.
+        #}
+        <div class="nota">con alguna remediación abierta de severidad crítica, alta o media; el riesgo aceptado con excepción vigente no cuenta{% if diferencia_activos != 0 %}: {{ diferencia_activos | abs | numero }} {{ 'más' if diferencia_activos > 0 else 'menos' }} que arriba (ver la nota de este panel){% endif %}</div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}

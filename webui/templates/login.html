@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex, nofollow">
+<title>Acceso · Inteligencia de Amenazas</title>
+<script src="{{ url_for('static', filename='tema.js') }}"></script>
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='estilo.css') }}">
+</head>
+<body>
+<div class="login-marco">
+  <div class="login-caja">
+    <div class="login-cabecera">
+      <div class="marca">
+        {% if tiene_logo %}
+        <img class="marca-icono marca-logo" src="{{ url_for('ajustes.logo') }}" alt="">
+        {% else %}
+        <svg class="marca-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <path d="M12 2.5 4 5.5v6c0 4.6 3.4 8.6 8 9.9 4.6-1.3 8-5.3 8-9.9v-6z"/>
+          <path d="M8.8 12.2l2.2 2.2 4.4-4.6"/>
+        </svg>
+        {% endif %}
+        <div class="marca-texto">
+          <h1>Inteligencia de Amenazas</h1>
+          <p>{{ empresa }}</p>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-cuerpo">
+        {# Al llegar redirigido desde una página protegida se explica por qué se pide
+           identificarse; sin ese aviso la pantalla parecía un error (2026-09-15). #}
+        {% if not get_flashed_messages() and request.args.get('siguiente') %}
+          <div class="aviso info" role="status">
+            <div>Para abrir esa página hay que identificarse primero. En cuanto entre,
+              la plataforma le lleva a donde iba.</div>
+          </div>
+        {% endif %}
+        {% with mensajes = get_flashed_messages(with_categories=true) %}
+          {% for categoria, mensaje in mensajes %}
+            {# Los errores se anuncian con role="alert" (lector de pantalla); los avisos, como
+               «Su sesión caducó por inactividad tras 30 minutos», con role="status". #}
+            <div class="aviso {% if categoria == 'aviso' %}aviso-nivel{% else %}{{ categoria }}{% endif %}" role="{% if categoria == 'error' %}alert{% else %}status{% endif %}">{{ mensaje }}</div>
+          {% endfor %}
+        {% endwith %}
+
+        {# Revisión de claridad del 2026-09-15: esta pantalla, que se ve SIN sesión,
+           mostraba la orden exacta para crear un usuario en el servidor. Ningún nombre
+           de fichero ni orden del servidor sale a la interfaz: se dice a quién avisar. #}
+        {% if not hay_usuarios %}
+          <div class="aviso aviso-nivel" role="status">
+            <div>Todavía no hay ninguna persona dada de alta, así que nadie puede entrar.
+              Avise a administración para que cree la primera cuenta de
+              administración.</div>
+          </div>
+        {% endif %}
+
+        <form method="post">
+          {# La etiqueta decía «Usuario» y lo que hay que escribir es el correo
+             electrónico (revisión de claridad del 2026-09-15). #}
+          <div class="campo">
+            <label for="usuario">Correo electrónico</label>
+            {# Sigue siendo type="text": las cuentas creadas antes de la política de
+               correo no tienen forma de dirección y el navegador las rechazaría. #}
+            <input type="text" id="usuario" name="usuario" required autofocus
+                   autocomplete="username" autocapitalize="none" spellcheck="false"
+                   inputmode="email" aria-describedby="ayuda-usuario">
+            <div class="ayuda" id="ayuda-usuario">El mismo con el que le dieron de alta,
+              por ejemplo nombre@ejemplo.local. Las cuentas antiguas entran con el
+              nombre que tenían.</div>
+          </div>
+          <div class="campo">
+            <label for="password">Contraseña</label>
+            <input type="password" id="password" name="password" required
+                   autocomplete="current-password">
+          </div>
+          <button class="btn primario w-full-center" type="submit">
+            Acceder
+          </button>
+        </form>
+      </div>
+      <div class="panel-pie centrado pequeno">
+        Acceso restringido a la red interna. Los intentos quedan registrados.
+      </div>
+    </div>
+    <p class="login-pie">Inteligencia de Amenazas · {{ empresa }} · Uso interno</p>
+  </div>
+</div>
+</body>
+</html>

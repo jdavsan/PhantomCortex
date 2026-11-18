@@ -1,0 +1,452 @@
+{% extends "base.html" %}
+{% block titulo %}Excepciones{% endblock %}
+{% block contenido %}
+{# Zona viva (2026-09-10): esta pantalla se actualiza sin recargar. Las acciones
+   marcadas con `data-accion-viva` y los enlaces de esta misma dirección piden la
+   página al servidor y sustituyen solo este trozo, así que no se pierde el sitio
+   ni la posición de desplazamiento. Sin JavaScript todo funciona igual que antes,
+   con recarga. Contrato en docs/INTERACCION_SIN_RECARGA_2026-09-10.md. #}
+<div id="pagina-excepciones" data-zona-viva data-zona-nombre="Excepciones de riesgo aceptado" tabindex="-1">
+{% from "_paginacion.html" import paginacion %}
+{#
+  Excepciones con vencimiento (2026-09-10): aceptación de riesgo con responsable,
+  justificación y fecha de caducidad obligatoria.
+
+  Reglas de la página: una excepción vigente saca la vulnerabilidad de la cola de trabajo
+  y de las cifras de riesgo, pero NO la borra ni la oculta; al vencer, la vulnerabilidad
+  vuelve sola, sin que nadie ejecute nada. Los formularios de prórroga y revocación se
+  despliegan con <details> (HTML puro) y la confirmación de revocar va con data-confirm,
+  atendido por app.js: sin style= ni on*= (CSP estricta).
+#}
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Aceptar un riesgo con fecha de caducidad o de forma permanente" data-tour-texto="Aquí se registra el riesgo que la organización decide asumir: qué vulnerabilidad, en qué activo, por qué, quién lo acepta con su nombre y su correo, y hasta qué día. Mientras la excepción está vigente esa vulnerabilidad no aparece en la cola de trabajo ni en las cifras de riesgo, pero sigue estando aquí a la vista. Si tiene fecha, cuando esa fecha llega la vulnerabilidad vuelve sola y nadie tiene que acordarse. Si es permanente no vence nunca, así que en su lugar la plataforma pide revisarla cada cierto tiempo: es un recordatorio, no un vencimiento.">
+  <div>
+    <h1>Excepciones: riesgo aceptado</h1>
+    <p>Aceptación de riesgo con responsable, justificación y plazo. Una excepción <strong>con fecha de vencimiento</strong> dura como máximo {{ max_dias | numero }} días, y {{ max_dias_kev | numero }} días cuando hay explotación activa confirmada; al vencer, la vulnerabilidad vuelve sola. Una excepción <strong>permanente</strong> se acepta sin fecha, no vence nunca y por eso hay que revisarla cada {{ revision_dias | numero }} días: solo la registra un administrador y nunca se admite sobre una vulnerabilidad que se esté explotando ahora mismo.</p>
+  </div>
+  <div class="acciones-titulo">
+    <a class="btn" href="{{ url_for('remediaciones.lista') }}">Ver la cola de remediación</a>
+    <a class="btn" href="{{ url_for('activos.lista') }}">Ver activos</a>
+  </div>
+</div>
+
+{# ========================================= 1. indicadores
+   Regla de color del proyecto: un CERO va en NEUTRO, nunca en verde. Hasta el 2026-09-15
+   tres de las seis tarjetas de esta pantalla pintaban su cero en verde («0 vigentes»,
+   «0 vencidas sin decisión», «0 permanentes pendientes de revisión») y las otras tres en
+   gris, así que seis ceros se leían como seis situaciones distintas cuando son la misma:
+   no hay nada que contar (revisión de claridad del 2026-09-15, punto 14). #}
+<div class="rejilla c4 mb-18" data-tour="2" data-tour-titulo="Cuánto riesgo hay aceptado" data-tour-texto="«Vigentes» son las aceptaciones de riesgo en pie ahora mismo y «vulnerabilidades cubiertas» las que están fuera de las cifras por su causa: si esa cifra crece, la organización está aplazando trabajo, no reduciéndolo. «Vencen pronto» son las que hay que decidir ya y «vencidas» las que caducaron sin decisión: su vulnerabilidad ya volvió sola a la cola y a las cifras.">
+  <div class="panel metrica {% if resumen.vigentes %}medio{% else %}neutro{% endif %}">
+    <div class="valor">{{ resumen.vigentes | numero }}</div>
+    <div class="etiqueta">Vigentes</div>
+    <div class="nota">{% if resumen.vigentes %}{{ resumen.vulnerabilidades_cubiertas | numero }} vulnerabilidades desaparecen de las cifras de riesgo por su causa (un CVE en un activo, contado como diferencia exacta){% else %}no hay ningún riesgo aceptado: todo lo confirmado está en la cola de trabajo{% endif %}</div>
+  </div>
+  <div class="panel metrica {% if resumen.por_vencer %}alto{% else %}neutro{% endif %}">
+    <div class="valor">{{ resumen.por_vencer | numero }}</div>
+    <div class="etiqueta">Vencen pronto</div>
+    <div class="nota">{% if resumen.por_vencer %}vencen en los próximos {{ resumen.aviso_dias | numero }} días; hay que corregir, prorrogar o revocar{% else %}ninguna vence en los próximos {{ resumen.aviso_dias | numero }} días{% endif %}</div>
+  </div>
+  <div class="panel metrica {% if resumen.vencidas %}critico{% else %}neutro{% endif %}">
+    <div class="valor">{{ resumen.vencidas | numero }}</div>
+    <div class="etiqueta">Vencidas sin decisión</div>
+    <div class="nota">{% if resumen.vencidas %}pasó su fecha: la vulnerabilidad ya volvió a la cola y a las cifras{% else %}ninguna excepción caducada pendiente de decisión{% endif %}</div>
+  </div>
+  <div class="panel metrica {% if resumen.kev %}critico{% else %}neutro{% endif %}">
+    <div class="valor">{{ resumen.kev | numero }}</div>
+    <div class="etiqueta">Con explotación activa</div>
+    <div class="nota">{% if resumen.kev %}riesgo aceptado sobre vulnerabilidades que se están explotando ahora mismo (CISA KEV){% else %}ninguna aceptación de riesgo sobre vulnerabilidades explotadas activamente{% endif %}</div>
+  </div>
+</div>
+
+{# ============================== 1 bis. las permanentes, con su propia cuenta #}
+<div class="rejilla c2 mb-18" data-tour="3" data-tour-titulo="Las que no vencen nunca" data-tour-texto="Una excepción permanente acepta el riesgo sin fecha de vencimiento, así que su vulnerabilidad no volverá sola a la cola de trabajo: no hay ninguna fecha que la devuelva. Para que eso no acabe siendo un olvido, cada permanente se revisa cada {{ revision_dias | numero }} días. Cuando pasa ese plazo sin que nadie confirme que sigue siendo válida, aparece aquí y en el correo diario de administración, y sube al principio de la lista. Ojo: sigue vigente aunque nadie conteste; el recordatorio no la caduca.">
+  <div class="panel metrica {% if resumen.permanentes %}medio{% else %}neutro{% endif %}">
+    <div class="valor">{{ resumen.permanentes | numero }}</div>
+    <div class="etiqueta">Permanentes (sin fecha de vencimiento)</div>
+    <div class="nota">{% if resumen.permanentes %}riesgo aceptado sin plazo: {{ 'esa vulnerabilidad no volverá sola' if resumen.permanentes == 1 else 'esas vulnerabilidades no volverán solas' }} a la cola de trabajo, porque no hay ninguna fecha que {{ 'la' if resumen.permanentes == 1 else 'las' }} devuelva. Se revisan cada {{ revision_dias | numero }} días{% else %}ninguna aceptación de riesgo sin fecha de vencimiento: todas caducan solas{% endif %}</div>
+  </div>
+  <div class="panel metrica {% if resumen.permanentes_sin_revisar %}alto{% else %}neutro{% endif %}">
+    <div class="valor">{{ resumen.permanentes_sin_revisar | numero }}</div>
+    <div class="etiqueta">Permanentes pendientes de revisión</div>
+    <div class="nota">{% if resumen.permanentes_sin_revisar %}{{ 'lleva' if resumen.permanentes_sin_revisar == 1 else 'llevan' }} más de {{ revision_dias | numero }} días sin que nadie confirme que el riesgo se sigue aceptando. {{ 'Sigue' if resumen.permanentes_sin_revisar == 1 else 'Siguen' }} vigentes: esto es un recordatorio, no un vencimiento{% else %}{% if resumen.permanentes %}todas las permanentes se han revisado dentro del plazo de {{ revision_dias | numero }} días{% else %}no hay ninguna permanente que revisar{% endif %}{% endif %}</div>
+  </div>
+</div>
+
+{# ========================================= 2. alta o solicitud #}
+<div class="panel" data-tour="4" data-tour-titulo="Registrar una aceptación de riesgo" data-tour-texto="Todos los campos son obligatorios menos la medida compensatoria. El responsable es la PERSONA que acepta el riesgo con su nombre y su correo, no una cuenta de la plataforma ni un área: es lo que pide una auditoría. La fecha de vencimiento no puede quedar vacía ni pasar del plazo máximo, y si la vulnerabilidad se está explotando ahora mismo hay que confirmarlo por escrito y describir la medida compensatoria.">
+  <div class="panel-cabecera">
+    <h2>{% if puede_gestionar %}Aceptar un riesgo{% elif puede_solicitar %}Solicitar una excepción{% else %}Cómo se acepta un riesgo{% endif %}</h2>
+    <span class="sub">{% if puede_gestionar %}Queda registrado con su nombre como quien la registra y con el del responsable como quien acepta el riesgo. Todo el alta va al registro de auditoría.{% elif puede_solicitar %}Su perfil puede pedir la excepción y verla; la decisión de aceptar el riesgo es del operador del SOC o de un administrador. La solicitud queda en el registro de auditoría y aparece más abajo.{% else %}Su perfil consulta las excepciones registradas. Para pedir una, hable con el jefe de su proceso o con administración.{% endif %}</span>
+  </div>
+  <div class="panel-cuerpo">
+    {% if aviso_kev %}
+    <div class="aviso error" role="alert">
+      <div><strong>Explotación activa confirmada.</strong> CISA confirma que se están explotando {{ aviso_kev | join(', ') }} en ataques reales. Aceptar el riesgo no la hace desaparecer: solo se admite con una medida compensatoria descrita y por un plazo máximo de {{ max_dias_kev | numero }} días. Si aun así hay que aceptarlo, marque la casilla de confirmación del final del formulario y vuelva a enviarlo.</div>
+    </div>
+    {% endif %}
+    {% if puede_solicitar %}
+    <form method="post" action="{{ url_for('excepciones.crear') if puede_gestionar else url_for('excepciones.solicitar') }}"
+          data-accion-viva="pagina-excepciones" data-accion-espera="Registrando…">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <fieldset>
+        <legend>Qué cubre la excepción</legend>
+        {% for clave in alcances %}
+        <div class="casilla">
+          <input type="radio" id="alcance-{{ clave }}" name="alcance" value="{{ clave }}" {% if (formulario.alcance or 'activo_cve') == clave %}checked{% endif %}>
+          <label for="alcance-{{ clave }}">{{ alcance_es[clave] }} — {{ alcance_ayuda[clave] }}</label>
+        </div>
+        {% endfor %}
+        <div class="campo-fila">
+          <div class="campo">
+            <label for="activo_id">Activo (para los alcances por activo)</label>
+            <select id="activo_id" name="activo_id">
+              <option value="">— Elija el servidor o el equipo de cómputo —</option>
+              {% for a in activos %}
+              <option value="{{ a.id }}" {% if formulario.activo_id == a.id | string %}selected{% endif %}>{{ a.nombre }} · {{ 'servidor' if a.origen == 'servidores' else 'equipo de cómputo' }}{% if a.proceso %} · {{ a.proceso }}{% endif %} · {{ a.cves | numero }} vulnerabilidad{{ 'es' if a.cves != 1 }} confirmada{{ 's' if a.cves != 1 }}</option>
+              {% endfor %}
+            </select>
+            <p class="ayuda">Solo aparecen los activos con alguna vulnerabilidad confirmada: en los demás no hay ningún riesgo que aceptar.{% if activos | length >= activos_tope %} Se muestran los primeros {{ activos_tope | numero }}.{% endif %}</p>
+          </div>
+          <div class="campo">
+            <label for="cve">Vulnerabilidad (CVE)</label>
+            <input type="text" id="cve" name="cve" value="{{ formulario.cve or '' }}" placeholder="CVE-2026-20348" maxlength="30">
+            <p class="ayuda">Obligatorio salvo en el alcance por paquete.</p>
+          </div>
+          <div class="campo">
+            <label for="paquete">Paquete (solo para el alcance por paquete)</label>
+            <input type="text" id="paquete" name="paquete" value="{{ formulario.paquete or '' }}" placeholder="openssl" maxlength="120">
+            <p class="ayuda">El nombre tal como aparece en la ficha del activo.</p>
+          </div>
+        </div>
+      </fieldset>
+      <fieldset>
+        <legend>Quién acepta el riesgo y hasta cuándo</legend>
+        <div class="campo-fila">
+          <div class="campo">
+            <label for="responsable_nombre">Responsable que acepta el riesgo (nombre y apellido)</label>
+            <input type="text" id="responsable_nombre" name="responsable_nombre" value="{{ formulario.responsable_nombre or '' }}" placeholder="Ana María Pérez Gómez" maxlength="120" required>
+            <p class="ayuda">Una persona, no una cuenta de la plataforma ni un área.</p>
+          </div>
+          <div class="campo">
+            <label for="responsable_correo">Correo del responsable</label>
+            <input type="email" id="responsable_correo" name="responsable_correo" value="{{ formulario.responsable_correo or '' }}" placeholder="nombre.apellido@ejemplo.local" maxlength="160" required>
+          </div>
+          <div class="campo">
+            <label for="vence_at">Fecha de vencimiento</label>
+            <input type="date" id="vence_at" name="vence_at" value="{{ formulario.vence_at or '' }}" min="{{ fecha_minima }}" max="{{ fecha_maxima }}" data-campo-vigencia="temporal">
+            <p class="ayuda">Se usa con la opción «Con fecha de vencimiento», que está justo debajo. Al llegar ese día, la vulnerabilidad vuelve sola a la cola y a las cifras.</p>
+          </div>
+        </div>
+        {#
+          Vigencia (2026-09-10): la opción «Permanente» que pidió el usuario. Es un grupo
+          de dos opciones y no una casilla suelta, para que no haya estado intermedio: o
+          hay fecha o no la hay. El campo de la fecha NO lleva «required», porque con la
+          opción permanente marcada tiene que poder quedarse vacío; quien valida es el
+          servidor, que además es el único sitio donde se puede comprobar el perfil, la
+          explotación activa y la longitud de la justificación.
+        #}
+        <fieldset data-grupo-vigencia="vence_at">
+          <legend>Plazo de la aceptación del riesgo</legend>
+          <div class="casilla">
+            <input type="radio" id="vigencia-temporal" name="vigencia" value="temporal" {% if (formulario.vigencia or 'temporal') != 'permanente' %}checked{% endif %}>
+            <label for="vigencia-temporal">Con fecha de vencimiento — la excepción caduca sola el día que se indique arriba y la vulnerabilidad vuelve a la cola de trabajo y a las cifras sin que nadie haga nada. Es lo normal y lo que se debe usar salvo que haya una razón para lo contrario.</label>
+          </div>
+          <div class="casilla">
+            <input type="radio" id="vigencia-permanente" name="vigencia" value="permanente" {% if formulario.vigencia == 'permanente' %}checked{% endif %} {% if not puede_permanente %}disabled{% endif %}>
+            <label for="vigencia-permanente">{{ texto_permanente }} — el riesgo se acepta sin plazo. La fecha de arriba se deja vacía y no se tiene en cuenta. {{ permanente_explicacion }}</label>
+          </div>
+          <p class="ayuda">{% if puede_permanente %}Una excepción permanente solo la registra un administrador, exige al menos {{ min_justificacion_permanente | numero }} caracteres de justificación y nunca se admite sobre una vulnerabilidad con explotación activa confirmada por CISA: para eso está la excepción con fecha, de {{ max_dias_kev | numero }} días como máximo. La plataforma recordará revisarla cada {{ revision_dias | numero }} días.{% else %}Su perfil no puede aceptar un riesgo sin fecha de vencimiento: esa decisión es de administración, porque una excepción sin plazo no se corrige sola nunca. Si hace falta, pídalo a administración.{% endif %}</p>
+        </fieldset>
+        <div class="campo">
+          <label for="justificacion">Justificación: por qué se acepta el riesgo</label>
+          <textarea id="justificacion" name="justificacion" rows="3" maxlength="2000" minlength="{{ min_justificacion }}" required placeholder="El fabricante no certifica la versión corregida hasta noviembre y la aplicación deja de funcionar si se actualiza antes.">{{ formulario.justificacion or '' }}</textarea>
+          <p class="ayuda">Al menos {{ min_justificacion | numero }} caracteres. Es el texto que leerá la auditoría.</p>
+        </div>
+        <div class="campo">
+          <label for="compensacion">Medida compensatoria aplicada (opcional)</label>
+          <textarea id="compensacion" name="compensacion" rows="2" maxlength="1000" placeholder="El servidor solo acepta conexiones desde la red de administración y se revisa su registro cada semana.">{{ formulario.compensacion or '' }}</textarea>
+          <p class="ayuda">Obligatoria si hay explotación activa confirmada: qué se ha hecho para contener el riesgo mientras la excepción esté vigente.</p>
+        </div>
+        <div class="casilla">
+          <input type="checkbox" id="confirmar_kev" name="confirmar_kev" value="1">
+          <label for="confirmar_kev">Confirmo que, si hay explotación activa confirmada por CISA, se acepta el riesgo a sabiendas y con la medida compensatoria descrita.</label>
+        </div>
+      </fieldset>
+      <div class="btn-grupo">
+        <button class="btn primario" type="submit">{% if puede_gestionar %}Aceptar el riesgo y registrar la excepción{% else %}Enviar la solicitud{% endif %}</button>
+      </div>
+    </form>
+    {% else %}
+    <p class="ayuda">Una excepción la registra el operador del SOC o un administrador, siempre con un responsable que acepta el riesgo por escrito y con una fecha de vencimiento. Mientras está vigente, la vulnerabilidad no aparece en la cola de trabajo ni en las cifras de riesgo, pero sigue consultable en esta página y en la ficha del activo.</p>
+    {% endif %}
+  </div>
+</div>
+
+{# ========================================= 3. filtros #}
+<div class="panel" data-tour="5" data-tour-titulo="Buscar y acotar la lista" data-tour-texto="Se puede acotar por situación (vigentes, las que vencen pronto, vencidas, las permanentes, las permanentes que llevan más de {{ revision_dias | numero }} días sin revisarse, o las revocadas), por lo que cubre la excepción y por proceso de negocio. El buscador mira el CVE, el paquete, el nombre del activo, el responsable y la justificación, así que sirve para responder a «¿qué ha aceptado este proceso y quién firmó?».">
+  <div class="panel-cabecera">
+    <h2>Filtros</h2>
+    {% if estado or alcance or proceso or q or activo %}
+    <div class="panel-acciones"><a class="btn pequeno" href="{{ url_for('excepciones.lista') }}">Quitar filtros</a></div>
+    {% endif %}
+    <span class="sub">Sin filtros se muestran todas, con las que exigen una decisión arriba.</span>
+  </div>
+  <div class="panel-cuerpo">
+    <form method="get" class="filtros" action="{{ url_for('excepciones.lista') }}"
+            data-filtro-vivo="lista-excepciones">
+      <div class="campo flex2-220">
+        <label for="q">CVE, paquete, activo, responsable o justificación</label>
+        <input type="text" id="q" name="q" value="{{ q }}" placeholder="CVE-2026-20348, openssl, SRV-CONTA, Ana Pérez…">
+      </div>
+      <div class="campo">
+        <label for="estado">Situación</label>
+        <select id="estado" name="estado">
+          <option value="" {% if not estado %}selected{% endif %}>Todas</option>
+          <option value="vigente" {% if estado == 'vigente' %}selected{% endif %}>Vigentes</option>
+          <option value="por_vencer" {% if estado == 'por_vencer' %}selected{% endif %}>Vencen en {{ aviso_dias | numero }} días o menos</option>
+          <option value="vencida" {% if estado == 'vencida' %}selected{% endif %}>Vencidas</option>
+          <option value="permanente" {% if estado == 'permanente' %}selected{% endif %}>Permanentes (sin fecha de vencimiento)</option>
+          <option value="revision" {% if estado == 'revision' %}selected{% endif %}>Permanentes pendientes de revisión</option>
+          <option value="revocada" {% if estado == 'revocada' %}selected{% endif %}>Revocadas</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="alcance">Qué cubre</label>
+        <select id="alcance" name="alcance">
+          <option value="" {% if not alcance %}selected{% endif %}>Cualquier alcance</option>
+          {% for clave in alcances %}
+          <option value="{{ clave }}" {% if alcance == clave %}selected{% endif %}>{{ alcance_es[clave] }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="proceso">Proceso de negocio</label>
+        <select id="proceso" name="proceso">
+          <option value="" {% if not proceso %}selected{% endif %}>Todos los procesos</option>
+          {% for p in procesos %}
+          <option value="{{ p }}" {% if proceso == p %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo minw-auto"><button type="submit" class="btn primario">Filtrar</button></div>
+    </form>
+  </div>
+</div>
+
+{# ========================================= 4. listado #}
+<div class="panel" id="lista-excepciones" tabindex="-1" data-zona-viva
+     data-zona-nombre="Excepciones registradas" data-tour="6" data-tour-titulo="Una fila por riesgo aceptado" data-tour-texto="Cada fila dice qué cubre la excepción, en qué situación está, hasta cuándo vale, quién aceptó el riesgo y cuántas vulnerabilidades confirmadas está tapando ahora mismo. Nada desaparece: una excepción vencida o revocada sigue aquí con su historia completa, incluidas las prórrogas y el motivo de cada una. Prorrogar y revocar piden un motivo, y las dos cosas quedan en el registro de auditoría.">
+  <div class="panel-cabecera">
+    <h2>Excepciones registradas</h2>
+    <span class="sub">{{ total | numero }} {{ 'excepción' if total == 1 else 'excepciones' }}{% if activo %} del activo «{{ activo.nombre }}»{% endif %}{% if q %} que coinciden con «{{ q }}»{% endif %}{% if paginas > 1 %}, en {{ paginas | numero }} páginas de {{ por_pagina | numero }}{% endif %}. Ordenadas por lo que exige una decisión y con las permanentes agrupadas aparte de las que vencen: primero las vencidas, después las que vencen en {{ aviso_dias | numero }} días o menos, después las permanentes que llevan más de {{ revision_dias | numero }} días sin revisarse, después el resto de las que tienen fecha, después el resto de las permanentes y al final las revocadas.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    {% if filas %}
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead>
+          <tr>
+            <th class="minw-220">Qué cubre</th>
+            <th>Situación</th>
+            <th>Vence o se revisa</th>
+            <th>Responsable que acepta el riesgo</th>
+            <th class="num" title="Vulnerabilidades confirmadas (un CVE en un activo) que esta excepción cubre. La cifra del indicador de arriba puede ser menor: una vulnerabilidad que llega por dos paquetes y solo tiene uno cubierto sigue contando en las cifras de riesgo.">Cubre</th>
+            <th>Registrada</th>
+            <th>Justificación y trazabilidad</th>
+            {% if puede_gestionar %}<th>Acciones</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+        {% for f in filas %}
+          <tr>
+            <td>
+              {% if f.activo_id %}<a href="{{ url_for('activos.detalle', activo_id=f.activo_id) }}">{{ f.activo_nombre }}</a>{% else %}<span class="txt-b">Toda la organización</span>{% endif %}
+              <div class="pequeno tenue mono">{% if f.cve %}{{ f.cve }}{% else %}paquete {{ f.paquete }}{% endif %}</div>
+              <div class="flex-4">
+                <span class="insignia neutra">{{ f.alcance_es }}</span>
+                {% if f.permanente %}<span class="insignia info" title="Riesgo aceptado sin fecha de vencimiento: esta excepción no caduca nunca">{{ texto_permanente_corto }}</span>{% endif %}
+                {% if f.kev %}<span class="insignia kev" title="Explotación activa confirmada por CISA cuando se registró">KEV</span>{% endif %}
+              </div>
+            </td>
+            <td class="nowrap">
+              <span class="insignia {{ f.estado_clave }}">{{ f.estado_es }}</span>
+              {% if f.revision_pendiente %}<div><span class="insignia alto" title="Pasó el plazo de revisión. La excepción sigue vigente: esto es un recordatorio, no un vencimiento.">Revisión pendiente</span></div>{% endif %}
+              <div class="pequeno tenue">{% if f.estado == 'vigente' and f.permanente %}fuera de la cola y de las cifras, sin fecha de vuelta{% elif f.estado == 'vigente' %}fuera de la cola y de las cifras{% elif f.estado == 'vencida' %}ya volvió a la cola{% else %}revocada el {{ f.revocada_at | fecha_es }}{% endif %}</div>
+            </td>
+            {#
+              Vencimiento o revisión (2026-09-10). Una permanente NO tiene fecha ni días
+              restantes: `f.dias_restantes` vale None y aquí no se imprime nunca, para
+              que no salga un cero engañoso ni un «faltan 999 días».
+            #}
+            <td class="pequeno">
+              {% if f.permanente %}
+              <span class="txt-b">No vence</span>
+              <div class="tenue">{{ texto_permanente }}</div>
+              <div class="{% if f.revision_pendiente %}txt-alto{% else %}tenue{% endif %}">
+                {% if f.revision_pendiente %}lleva {{ f.dias_sin_revisar | numero }} {{ 'día' if f.dias_sin_revisar == 1 else 'días' }} aceptada sin revisarse: confirme que sigue siendo válida o revóquela{% elif f.revisada_at %}revisada el {{ f.revisada_at | fecha_es }} por {{ f.revisada_por }}; toca revisarla otra vez dentro de {{ f.revision_en_dias | numero }} {{ 'día' if f.revision_en_dias == 1 else 'días' }}{% else %}registrada hace {{ f.dias_sin_revisar | numero }} {{ 'día' if f.dias_sin_revisar == 1 else 'días' }}; toca revisarla dentro de {{ f.revision_en_dias | numero }} {{ 'día' if f.revision_en_dias == 1 else 'días' }}{% endif %}
+              </div>
+              {% if f.revisiones %}<div class="tenue">{{ f.revisiones | numero }} {{ 'revisión confirmada' if f.revisiones == 1 else 'revisiones confirmadas' }}</div>{% endif %}
+              {% if f.vence_at_inicial %}<div class="tenue">antes vencía el {{ f.vence_at_inicial | fecha_es }}</div>{% endif %}
+              {% else %}
+              {{ f.vence_at | fecha_es }}
+              <div class="{% if f.estado == 'vencida' %}txt-critico-b{% elif f.estado == 'vigente' and f.dias_restantes <= aviso_dias %}txt-alto{% else %}tenue{% endif %}">
+                {% if f.estado == 'revocada' %}quedaba hasta esa fecha{% elif f.dias_restantes < 0 %}venció hace {{ -f.dias_restantes | numero }} días{% elif f.dias_restantes == 0 %}vence hoy{% elif f.dias_restantes == 1 %}vence mañana{% else %}quedan {{ f.dias_restantes | numero }} días{% endif %}
+              </div>
+              {% if f.prorrogas %}<div class="tenue">{{ f.prorrogas | numero }} {{ 'prórroga' if f.prorrogas == 1 else 'prórrogas' }}; al principio vencía el {{ f.vence_at_inicial | fecha_es }}</div>{% endif %}
+              {% endif %}
+            </td>
+            <td class="pequeno">
+              {{ f.responsable_nombre }}
+              <div class="tenue mono">{{ f.responsable_correo }}</div>
+            </td>
+            <td class="num {% if f.estado == 'vigente' and f.vulnerabilidades_cubiertas %}txt-alto{% else %}tenue{% endif %}">{{ f.vulnerabilidades_cubiertas | numero }}</td>
+            <td class="pequeno nowrap" title="{{ f.registrado_at | fecha_es(con_hora=True) }}">
+              {{ f.registrado_at | fecha_es }}
+              <div class="tenue">{{ f.registrado_por }}</div>
+            </td>
+            <td class="pequeno">
+              {{ f.justificacion | recortar(140) }}
+              <details class="mt-8">
+                <summary>Ver la trazabilidad completa</summary>
+                <p><strong>Justificación completa:</strong> {{ f.justificacion }}</p>
+                {% if f.compensacion %}<p><strong>Medida compensatoria:</strong> {{ f.compensacion }}</p>{% endif %}
+                <p><strong>Registrada por:</strong> {{ f.registrado_por }}, el {{ f.registrado_at | fecha_es(con_hora=True) }}.</p>
+                {% if f.prorrogada_at %}<p><strong>Última prórroga:</strong> {{ f.prorrogada_por }}, el {{ f.prorrogada_at | fecha_es(con_hora=True) }}. Motivo: {{ f.prorroga_motivo }}</p>{% endif %}
+                {% if f.revocada_at %}<p><strong>Revocada por:</strong> {{ f.revocada_por }}, el {{ f.revocada_at | fecha_es(con_hora=True) }}. Motivo: {{ f.revocada_motivo }}</p>{% endif %}
+                {% if f.permanente %}
+                <p><strong>Plazo:</strong> {{ texto_permanente }}. {{ permanente_explicacion }}</p>
+                {% if f.revisada_at %}<p><strong>Última revisión:</strong> {{ f.revisada_por }}, el {{ f.revisada_at | fecha_es(con_hora=True) }}{% if f.revisiones %} ({{ f.revisiones | numero }} en total){% endif %}.{% if f.revisada_nota %} Nota: {{ f.revisada_nota }}{% endif %}</p>{% else %}<p><strong>Última revisión:</strong> ninguna todavía; el plazo se cuenta desde que se registró.</p>{% endif %}
+                {% if f.revision_pendiente %}<p class="txt-alto">{{ revision_explicacion }}</p>{% endif %}
+                {% endif %}
+                <p class="tenue">{{ estado_explicacion[f.estado] }}</p>
+              </details>
+            </td>
+            {% if puede_gestionar %}
+            <td class="pequeno">
+              {% if f.estado != 'revocada' %}
+              {% if f.permanente %}
+              {#
+                Una permanente no se puede prorrogar (no tiene plazo que correr), pero sí
+                revisarse, convertirse en temporal y revocarse.
+              #}
+              {% if puede_permanente %}
+              <details>
+                <summary>Confirmar la revisión</summary>
+                <form method="post" action="{{ url_for('excepciones.revisar', excepcion_id=f.id) }}"
+                      data-accion-viva="pagina-excepciones" data-accion-espera="Registrando la revisión…">
+                  <input type="hidden" name="csrf" value="{{ csrf }}">
+                  <p>Confirma que el riesgo se sigue aceptando tal como está. Queda registrado quién y cuándo, y el recordatorio no volverá hasta dentro de {{ revision_dias | numero }} días. La excepción no cambia: ya estaba vigente y sigue estándolo.</p>
+                  <p><label for="nota-{{ f.id }}">Nota de la revisión (opcional)</label>
+                    <textarea id="nota-{{ f.id }}" name="nota" rows="2" maxlength="500" placeholder="Revisado con el jefe del proceso: el fabricante sigue sin versión compatible y la medida compensatoria sigue en pie."></textarea></p>
+                  <button class="btn pequeno" type="submit">Confirmar que sigue siendo válida</button>
+                </form>
+              </details>
+              {% endif %}
+              <details>
+                <summary>Ponerle fecha de vencimiento</summary>
+                <form method="post" action="{{ url_for('excepciones.convertir_temporal', excepcion_id=f.id) }}"
+                      data-accion-viva="pagina-excepciones" data-accion-espera="Poniendo la fecha…">
+                  <input type="hidden" name="csrf" value="{{ csrf }}">
+                  <p>Deja de ser permanente: a partir de esa fecha la vulnerabilidad vuelve sola a la cola de trabajo y a las cifras de riesgo.</p>
+                  <p><label for="vence-t-{{ f.id }}">Fecha de vencimiento</label>
+                    <input type="date" id="vence-t-{{ f.id }}" name="vence_at" min="{{ fecha_minima }}" max="{{ fecha_maxima }}" required></p>
+                  <p><label for="motivo-t-{{ f.id }}">Motivo</label>
+                    <textarea id="motivo-t-{{ f.id }}" name="motivo" rows="2" minlength="{{ min_justificacion }}" maxlength="500" required placeholder="Ya hay fecha de salida del sistema heredado: el riesgo se acepta solo hasta entonces."></textarea></p>
+                  <button class="btn pequeno" type="submit">Convertir en excepción con fecha</button>
+                </form>
+              </details>
+              {% else %}
+              <details>
+                <summary>Prorrogar</summary>
+                <form method="post" action="{{ url_for('excepciones.prorrogar', excepcion_id=f.id) }}"
+                      data-accion-viva="pagina-excepciones" data-accion-espera="Prorrogando…">
+                  <input type="hidden" name="csrf" value="{{ csrf }}">
+                  <p><label for="vence-{{ f.id }}">Fecha nueva de vencimiento</label>
+                    <input type="date" id="vence-{{ f.id }}" name="vence_at" min="{{ fecha_minima }}" max="{{ fecha_maxima }}" required></p>
+                  <p><label for="motivo-p-{{ f.id }}">Motivo de la prórroga</label>
+                    <textarea id="motivo-p-{{ f.id }}" name="motivo" rows="2" minlength="{{ min_justificacion }}" maxlength="500" required placeholder="El fabricante aplazó la certificación de la versión corregida a diciembre."></textarea></p>
+                  <button class="btn pequeno" type="submit">Prorrogar</button>
+                </form>
+              </details>
+              {% if puede_permanente and not f.kev %}
+              <details>
+                <summary>Quitarle la fecha (permanente)</summary>
+                <form method="post" action="{{ url_for('excepciones.convertir_permanente', excepcion_id=f.id) }}"
+                      data-confirm="¿Aceptar este riesgo sin ninguna fecha de vencimiento? La vulnerabilidad no volverá sola a la cola de trabajo: solo saldrá de aquí si alguien revoca la excepción." data-confirm-si="Sí, aceptarlo sin plazo"
+                      data-accion-viva="pagina-excepciones" data-accion-espera="Quitando la fecha…">
+                  <input type="hidden" name="csrf" value="{{ csrf }}">
+                  <p>{{ permanente_explicacion }}</p>
+                  <p><label for="motivo-perm-{{ f.id }}">Por qué el riesgo se acepta ya sin plazo</label>
+                    <textarea id="motivo-perm-{{ f.id }}" name="motivo" rows="3" minlength="{{ min_justificacion_permanente }}" maxlength="500" required placeholder="El sistema heredado se mantiene hasta su retiro en 2030 y el fabricante no publicará una versión compatible; se revocará el día que se apague el servidor."></textarea></p>
+                  <p class="ayuda">Al menos {{ min_justificacion_permanente | numero }} caracteres: es lo que quedará para justificarla dentro de tres años.</p>
+                  <button class="btn pequeno" type="submit">Convertir en permanente</button>
+                </form>
+              </details>
+              {% endif %}
+              {% endif %}
+              <details>
+                <summary>Revocar</summary>
+                <form method="post" action="{{ url_for('excepciones.revocar', excepcion_id=f.id) }}" data-confirm="¿Revocar esta aceptación de riesgo? La vulnerabilidad volverá ahora mismo a la cola de trabajo y a las cifras de riesgo." data-confirm-si="Sí, revocar"
+                      data-accion-viva="pagina-excepciones" data-accion-espera="Revocando…">
+                  <input type="hidden" name="csrf" value="{{ csrf }}">
+                  <p><label for="motivo-r-{{ f.id }}">Motivo de la revocación</label>
+                    <textarea id="motivo-r-{{ f.id }}" name="motivo" rows="2" minlength="{{ min_justificacion }}" maxlength="500" required placeholder="Ya se instaló la versión corregida en el activo, la excepción sobra."></textarea></p>
+                  <button class="btn pequeno peligro" type="submit">Revocar</button>
+                </form>
+              </details>
+              {% else %}
+              <span class="tenue">sin acciones: ya está revocada</span>
+              {% endif %}
+            </td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {{ paginacion('excepciones.lista', args, pagina, paginas, total, por_pagina,
+                  singular='excepción', plural='excepciones', ancla='lista-excepciones', zona='lista-excepciones',
+                  titulo='Paginación de las excepciones') }}
+    {% else %}
+    <div class="vacio">
+      <p>{% if q or estado or alcance or proceso or activo %}Ninguna excepción coincide con el filtro.{% else %}No hay ninguna aceptación de riesgo registrada.{% endif %}</p>
+      <p class="pequeno">Sin excepciones, todas las vulnerabilidades confirmadas cuentan en las cifras de riesgo y aparecen en la cola de remediación, que es como debe ser mientras nadie decida asumir un riesgo por escrito.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{# ========================================= 5. solicitudes #}
+{% if puede_solicitar %}
+<div class="panel" data-tour="7" data-tour-titulo="Solicitudes pendientes de decisión" data-tour-texto="Un jefe de proceso puede pedir una excepción, pero no aceptar el riesgo: la solicitud queda aquí y en el registro de auditoría, con quién la pidió y qué pidió, hasta que el operador del SOC o un administrador la registra o la descarta. Mientras eso no pase, la vulnerabilidad sigue contando y sigue en la cola de trabajo.">
+  <div class="panel-cabecera">
+    <h2>Solicitudes de los últimos noventa días</h2>
+    <span class="sub">Una solicitud no acepta ningún riesgo: solo pide que se acepte. Se registran las últimas veinte.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    {% if solicitudes %}
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead><tr><th class="nowrap">Fecha</th><th>Quién la pidió</th><th>Qué pidió</th></tr></thead>
+        <tbody>
+        {% for s in solicitudes %}
+          <tr>
+            <td class="pequeno nowrap" title="{{ s.at | fecha_es(con_hora=True) }}">{{ s.at | fecha_es }}<div class="tenue">{{ s.at | hace }}</div></td>
+            <td class="pequeno">{{ s.username }}</td>
+            <td class="pequeno">{{ s.detail }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="vacio sin-icono">
+      <p>No hay ninguna solicitud en los últimos noventa días.</p>
+      <p class="pequeno">Las solicitudes salen del formulario de esta página cuando lo envía un jefe de proceso.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+</div>{# fin de la zona viva #}
+{% endblock %}

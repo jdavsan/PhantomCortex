@@ -1,0 +1,460 @@
+{% extends "base.html" %}
+{% block titulo %}Credenciales{% endblock %}
+{% block contenido %}
+{# Zona viva (2026-09-10): esta pantalla se actualiza sin recargar. Las acciones
+   marcadas con `data-accion-viva` y los enlaces de esta misma dirección piden la
+   página al servidor y sustituyen solo este trozo, así que no se pierde el sitio
+   ni la posición de desplazamiento. Sin JavaScript todo funciona igual que antes,
+   con recarga. Contrato en docs/INTERACCION_SIN_RECARGA_2026-09-10.md. #}
+<div id="pagina-credenciales" data-zona-viva data-zona-nombre="Credenciales y correo" tabindex="-1">
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Credenciales y destinatarios" data-tour-texto="Contraseña del correo (se renueva cada mes), clave de la API de NVD y a quién llegan alertas e informes. Los secretos nunca se muestran completos.">
+  <div>
+    <h1>Credenciales y destinatarios</h1>
+    <p>Contraseña SMTP (se renueva cada {{ rotacion_dias }} días), destinatarios de
+       los correos y clave de API de NVD. Todo se cambia aquí sin editar ficheros,
+       se verifica antes de guardarse y queda registrado en el historial.</p>
+  </div>
+</div>
+
+{# ------------------------------------------------- estado de rotación #}
+{% if estado %}
+  <div class="aviso {% if estado.estado == 'caducada' or estado.estado == 'fallando' %}error
+       {%- elif estado.estado == 'por_caducar' %}aviso-nivel{% else %}exito{% endif %}">
+    <div>
+      <strong>
+        {% if estado.estado == 'caducada' %}Contraseña caducada
+        {% elif estado.estado == 'fallando' %}El envío de correo está fallando
+        {% elif estado.estado == 'por_caducar' %}La contraseña caduca pronto
+        {% else %}Contraseña vigente{% endif %}
+      </strong>
+      · {{ estado.mensaje }}
+    </div>
+  </div>
+
+<div class="rejilla c4 mb-18">
+  <div class="panel metrica {% if estado.dias_restantes is not none and estado.dias_restantes <= 3 %}critico{% elif estado.dias_restantes is not none and estado.dias_restantes <= 7 %}medio{% else %}exito{% endif %}">
+    <div class="valor">
+      {% if estado.dias_restantes is none %}—
+      {% elif estado.dias_restantes < 0 %}{{ estado.dias_restantes }}
+      {% else %}{{ estado.dias_restantes }}{% endif %}
+    </div>
+    <div class="etiqueta">Días restantes</div>
+    <div class="nota">
+      {% if estado.caducada %}Caducó hace {{ -estado.dias_restantes }} día{% if -estado.dias_restantes != 1 %}s{% endif %}
+      {% else %}De {{ estado.rotation_days }} días de validez{% endif %}
+    </div>
+  </div>
+  <div class="panel metrica">
+    <div class="valor fs-18">{{ estado.rotated_at | fecha_es }}</div>
+    <div class="etiqueta">Último cambio</div>
+    <div class="nota">{{ estado.rotated_at | hace }}</div>
+  </div>
+  <div class="panel metrica {% if estado.last_verify_ok %}exito{% elif estado.last_verify_ok is not none %}critico{% endif %}">
+    <div class="valor fs-18">
+      {% if estado.last_verify_ok %}Correcta
+      {% elif estado.last_verify_ok is none %}Sin verificar
+      {% else %}Fallida{% endif %}
+    </div>
+    <div class="etiqueta">Última verificación</div>
+    <div class="nota">
+      {% if estado.last_verified_at %}{{ estado.last_verified_at | hace }}
+      {% else %}Nunca se ha verificado{% endif %}
+    </div>
+  </div>
+  <div class="panel metrica {% if estado.consecutive_failures %}critico{% endif %}">
+    <div class="valor">{{ estado.consecutive_failures | default(0) }}</div>
+    <div class="etiqueta">Fallos seguidos</div>
+    {% if estado.last_verify_error %}
+      <div class="nota txt-critico">{{ estado.last_verify_error | recortar(40) }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# Certificado HTTPS (2026-09-08): la plataforma vigila su caducidad como la de la
+   contraseña SMTP. Solo se lee el certificado público; la clave privada es de root. #}
+{% if certificado %}
+<div class="panel mb-18" id="certificado-tls">
+  <div class="panel-cabecera">
+    <h2>Certificado HTTPS</h2>
+    <span class="sub">El certificado con el que esta plataforma se sirve cifrada. Cuando caduque, los navegadores bloquearán la entrada, así que se avisa por correo con {{ certificado.aviso_dias | numero }} días de antelación y aquí se ven los días que quedan.</span>
+  </div>
+  <div class="panel-cuerpo">
+    <div class="rejilla c4">
+      <div class="panel metrica {% if certificado.estado == 'caducado' or certificado.estado == 'error' %}critico{% elif certificado.estado == 'por_caducar' %}medio{% elif certificado.estado == 'ok' %}exito{% else %}neutro{% endif %}">
+        <div class="valor">{% if certificado.dias_restantes is none %}—{% else %}{{ certificado.dias_restantes | numero }}{% endif %}</div>
+        <div class="etiqueta">Días restantes</div>
+        <div class="nota">{{ certificado.estado_es }}{% if certificado.not_after %} · caduca el {{ certificado.not_after | fecha_es }}{% endif %}</div>
+      </div>
+      <div class="panel metrica">
+        <div class="valor fs-18">{{ certificado.nombre_comun or '—' }}</div>
+        <div class="etiqueta">Nombre del certificado</div>
+        <div class="nota">{% if certificado.nombres %}Cubre: {{ certificado.nombres | join(', ') }}{% else %}Sin nombres alternativos{% endif %}</div>
+      </div>
+      <div class="panel metrica">
+        <div class="valor fs-18">{{ certificado.emisor_corto or '—' }}</div>
+        <div class="etiqueta">Emisor</div>
+        <div class="nota">{% if certificado.not_before %}Emitido el {{ certificado.not_before | fecha_es }}{% endif %}</div>
+      </div>
+      {# Revisión de claridad del 2026-09-15: aquí se veía la ruta del fichero en el
+         servidor y la orden para recargar el servidor web. Ningún nombre de fichero ni
+         orden del servidor sale a la interfaz: se dice quién lo hace. #}
+      <div class="panel metrica">
+        <div class="valor fs-18">Redes</div>
+        <div class="etiqueta">Quién lo renueva</div>
+        <div class="nota">Pide el certificado nuevo al emisor, lo sustituye y recarga el servidor web; el cambio no corta el servicio.</div>
+      </div>
+    </div>
+    <p class="pequeno mt-12">{{ certificado.mensaje }}</p>
+  </div>
+</div>
+{% endif %}
+
+<div class="rejilla c2">
+
+  {# --------------------------------------------------- cambiar contraseña #}
+  <div class="panel" data-tour="2" data-tour-titulo="Contraseña del correo" data-tour-texto="Cámbiela aquí cuando la renueve el proveedor; el sistema la verifica antes de guardarla y avisa cuando está a punto de caducar.">
+    <div class="panel-cabecera">
+      <h2>Renovar la contraseña SMTP</h2>
+      <span class="sub">Se guarda en el almacén de credenciales del servidor, solo legible por la aplicación, y nunca se muestra completa</span>
+    </div>
+    <div class="panel-cuerpo">
+      <form method="post" action="{{ url_for('credenciales.rotar') }}"
+            data-accion-viva="pagina-credenciales" data-accion-espera="Rotando la credencial…" data-accion-tiempo="120000">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="campo">
+          <label for="pw1">Contraseña nueva</label>
+          <input type="password" id="pw1" name="password_nueva" required
+                 autocomplete="new-password">
+          {# Revisión de claridad del 2026-09-15: la máscara dejaba ver los dos primeros
+             caracteres de la contraseña. Ahora no se ve ninguno; solo cuántos tenía, que
+             es lo único que sirve para comprobar que se pegó entera. #}
+          <div class="ayuda">Actual: {{ smtp.password_mascara | enmascarar }}
+            · usuario <span class="mono">{{ smtp.user }}</span></div>
+        </div>
+        <div class="campo">
+          <label for="pw2">Repetir la contraseña</label>
+          <input type="password" id="pw2" name="password_repetir" required
+                 autocomplete="new-password">
+        </div>
+        <div class="campo">
+          <label for="rot">Días de validez</label>
+          <input type="number" id="rot" name="rotacion_dias" value="{{ rotacion_dias }}"
+                 min="1" max="365">
+          <div class="ayuda">Se avisará al administrador
+            {{ avisos_dias | join(', ') }} días antes de que caduque.</div>
+        </div>
+        <div class="casilla">
+          <input type="checkbox" id="ver" name="verificar" value="1" checked>
+          <label for="ver">Verificar contra el servidor antes de guardar
+            <span class="tenue">— si la contraseña no funciona, no se guarda y el
+            sistema sigue enviando con la actual</span>
+          </label>
+        </div>
+        <button class="btn primario" type="submit">Guardar contraseña</button>
+      </form>
+    </div>
+  </div>
+
+  {# --------------------------------------------------- configuración SMTP #}
+  <div class="panel">
+    <div class="panel-cabecera">
+      <h2>Servidor de correo</h2>
+      <span class="sub">El servidor, el usuario, el cifrado y el remitente se editan aquí; la contraseña tiene su propio formulario, a la izquierda</span>
+    </div>
+    <div class="panel-cuerpo">
+      <form method="post" action="{{ url_for('credenciales.servidor') }}"
+            data-accion-viva="pagina-credenciales" data-accion-espera="Guardando el servidor…" data-accion-tiempo="60000">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="campo">
+          <label for="servidor">Servidor</label>
+          <input type="text" id="servidor" name="servidor" value="{{ smtp.server }}"
+                 class="mono" required placeholder="smtp.gmail.com">
+        </div>
+        <div class="campo-fila">
+          <div class="campo">
+            <label for="puerto">Puerto</label>
+            <input type="number" id="puerto" name="puerto" value="{{ smtp.port }}"
+                   min="1" max="65535" class="maxw-160" required>
+          </div>
+          <div class="campo">
+            <label for="cifrado">Cifrado</label>
+            <select id="cifrado" name="cifrado">
+              <option value="tls" {% if smtp.use_tls %}selected{% endif %}>STARTTLS (587, lo habitual)</option>
+              <option value="ssl" {% if smtp.use_ssl %}selected{% endif %}>SSL directo (465)</option>
+              <option value="ninguno" {% if not smtp.use_tls and not smtp.use_ssl %}selected{% endif %}>Ninguno (no recomendado)</option>
+            </select>
+          </div>
+        </div>
+        <div class="campo">
+          <label for="usuario_smtp">Usuario</label>
+          <input type="text" id="usuario_smtp" name="usuario_smtp" value="{{ smtp.user }}"
+                 class="mono" required autocomplete="off">
+        </div>
+        <div class="campo-fila">
+          <div class="campo">
+            <label for="remitente">Remitente (correo)</label>
+            <input type="email" id="remitente" name="remitente" value="{{ smtp.from_addr }}" required>
+          </div>
+          <div class="campo">
+            <label for="remitente_nombre">Remitente (nombre)</label>
+            <input type="text" id="remitente_nombre" name="remitente_nombre"
+                   value="{{ smtp.from_name }}" maxlength="120">
+          </div>
+        </div>
+        <p class="ayuda">Contraseña actual: {{ smtp.password_mascara | enmascarar }}. Si
+          cambia de proveedor (por ejemplo a Gmail), guarde primero el servidor y
+          renueve después la contraseña a la izquierda: así se prueba la combinación
+          nueva completa antes de dejarla puesta.</p>
+        <button class="btn primario" type="submit">Guardar servidor</button>
+      </form>
+
+      <div class="mt-16 btn-grupo">
+        <form method="post" action="{{ url_for('credenciales.verificar') }}"
+              data-accion-viva="pagina-credenciales" data-accion-espera="Verificando…" data-accion-tiempo="120000">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="btn" type="submit">Verificar conexión</button>
+        </form>
+        <button class="btn" type="button"
+                data-toggle="form-prueba" aria-expanded="false">
+          Enviar correo de prueba
+        </button>
+      </div>
+
+      <form method="post" action="{{ url_for('credenciales.prueba_envio') }}"
+            id="form-prueba" hidden class="mt-14"
+            data-accion-viva="pagina-credenciales" data-accion-espera="Enviando la prueba…" data-accion-tiempo="120000">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="campo">
+          <label for="destino">Enviar a</label>
+          <input type="text" id="destino" name="destino"
+                 placeholder="{{ destinatarios.administrador | join(', ') }}">
+          <div class="ayuda">Si se deja vacío se envía a los destinatarios de
+            administración. <strong>Es un envío real.</strong></div>
+        </div>
+        <button class="btn primario" type="submit">Enviar prueba</button>
+      </form>
+
+      <div class="ayuda mt-14">
+        «Verificar conexión» distingue un fallo de <strong>autenticación</strong>
+        (hay que cambiar la contraseña) de un fallo de <strong>red</strong>
+        (el servidor no responde). Son problemas distintos y el sistema no debe
+        pedir una contraseña nueva cuando lo que falla es la red.
+      </div>
+    </div>
+  </div>
+</div>
+
+
+{# ------------------------------------------------------ clave de API NVD #}
+{% if nvd %}
+<div class="panel" data-tour="3" data-tour-titulo="Más rápido con clave" data-tour-texto="Formato UUID de 36 caracteres. Con ella el enriquecimiento pasa de 5 a 50 consultas cada 30 segundos. «Verificar» la prueba contra la API antes de guardar.">
+  <div class="panel-cabecera">
+    <h2>Clave de API de NVD</h2>
+    <span class="sub">Multiplica por 10 la velocidad del enriquecimiento de CVE (CVSS oficial)</span>
+  </div>
+  <div class="panel-cuerpo">
+
+    {% if nvd.situacion == 'verificada' %}
+      <div class="aviso exito"><div><strong>Clave válida y en uso.</strong>
+        · NVD la aceptó {{ nvd.ultima_verificacion_at | hace }}. El enriquecimiento trabaja a 50 peticiones cada 30 segundos.</div></div>
+    {% elif nvd.situacion == 'sin_verificar' %}
+      <div class="aviso aviso-nivel"><div><strong>Clave configurada, pendiente de verificar.</strong>
+        · Tiene el formato correcto, pero no se ha comprobado contra NVD. Pulse «Verificar clave».</div></div>
+    {% elif nvd.situacion == 'rechazada' %}
+      <div class="aviso error"><div><strong>NVD rechaza la clave configurada.</strong>
+        · {{ nvd.ultima_verificacion_msg }} El sistema la ignora y trabaja con el límite público.</div></div>
+    {% elif nvd.situacion == 'formato_invalido' %}
+      <div class="aviso error"><div><strong>La clave configurada no es una clave de NVD.</strong>
+        · Tiene {{ nvd.longitud }} caracteres y una clave del NIST tiene 36 con guiones. El sistema la
+        ignora y trabaja con el límite público (5 peticiones cada 30 s). Pegue la clave correcta o retírela.</div></div>
+    {% else %}
+      <div class="aviso aviso-nivel"><div><strong>Sin clave.</strong>
+        · El enriquecimiento funciona, pero al límite público: 5 peticiones cada 30 segundos.</div></div>
+    {% endif %}
+
+    <div class="rejilla c3 mb-18">
+      <div class="panel metrica {% if nvd.pendientes > 500 %}medio{% elif nvd.pendientes %}{% else %}exito{% endif %}">
+        <div class="valor">{{ nvd.pendientes | numero }}</div>
+        <div class="etiqueta">CVE pendientes de enriquecer</div>
+        <div class="nota">Sin puntuación oficial todavía</div>
+      </div>
+      <div class="panel metrica">
+        <div class="valor">{{ nvd.por_ejecucion | numero }}</div>
+        <div class="etiqueta">CVE por ejecución diaria</div>
+        <div class="nota">Ajuste «Máximo de CVE a enriquecer por ejecución», en Administración → Ajustes → Enriquecimiento</div>
+      </div>
+      <div class="panel metrica">
+        {# Revisión de claridad del 2026-09-15: decía «1 días» y «~2 min». Ahora concuerda
+           en singular y plural y las unidades van con su nombre completo. #}
+        {% set minutos = (nvd.por_ejecucion * (nvd.segundos_por_cve_con_clave if nvd.utilizable else nvd.segundos_por_cve_sin_clave) / 60) | round(0) | int %}
+        <div class="valor">{% if nvd.dias_estimados is not none %}{{ nvd.dias_estimados | numero }}{% else %}—{% endif %}</div>
+        <div class="etiqueta">{% if nvd.dias_estimados == 1 %}Día para agotar la cola{% else %}Días para agotar la cola{% endif %}</div>
+        <div class="nota">
+          Cada ejecución tarda unos {{ minutos | numero }} minuto{{ 's' if minutos != 1 }}
+          {% if nvd.utilizable %}con la clave en uso{% else %}sin clave{% endif %}
+        </div>
+      </div>
+    </div>
+
+    <div class="rejilla c2">
+      <div>
+        <form method="post" action="{{ url_for('credenciales.nvd_guardar') }}"
+              data-accion-viva="pagina-credenciales" data-accion-espera="Guardando…" data-accion-tiempo="120000">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <div class="campo">
+            <label for="nvd-clave">Clave nueva</label>
+            <input type="text" id="nvd-clave" name="clave" class="mono" required
+                   autocomplete="off" spellcheck="false" minlength="36" maxlength="36"
+                   placeholder="12345678-abcd-4ef0-9876-0123456789ab">
+            <div class="ayuda">
+              {% if nvd.configurada %}Actual: {{ nvd.mascara | enmascarar }}
+              {% else %}No hay ninguna clave guardada.{% endif %}
+              · Se guarda en el almacén de credenciales del servidor, solo legible por la aplicación, y nunca se muestra completa.
+            </div>
+          </div>
+          <div class="casilla">
+            <input type="checkbox" id="nvd-ver" name="verificar" value="1" checked>
+            <label for="nvd-ver">Verificar contra NVD antes de guardar
+              <span class="tenue">— si NVD no la acepta, no se guarda</span></label>
+          </div>
+          <button class="btn primario" type="submit">Guardar clave</button>
+        </form>
+      </div>
+      <div>
+        <div class="btn-grupo">
+          <form method="post" action="{{ url_for('credenciales.nvd_verificar') }}"
+                data-accion-viva="pagina-credenciales" data-accion-espera="Verificando…" data-accion-tiempo="120000">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button class="btn" type="submit" {% if not nvd.configurada %}disabled{% endif %}>Verificar clave actual</button>
+          </form>
+          <form method="post" action="{{ url_for('credenciales.nvd_quitar') }}"
+                data-confirm="¿Retirar la clave NVD? El enriquecimiento seguirá funcionando, pero al límite público (10 veces más lento)."
+                data-accion-viva="pagina-credenciales" data-accion-espera="Quitando…">
+            <input type="hidden" name="csrf" value="{{ csrf }}">
+            <button class="btn peligro" type="submit" {% if not nvd.configurada %}disabled{% endif %}>Retirar clave</button>
+          </form>
+        </div>
+        {% if nvd.ultima_verificacion_at %}
+        <div class="ayuda mt-14">Última verificación: {{ nvd.ultima_verificacion_at | hace }} ·
+          {% if nvd.ultima_verificacion_ok %}<span class="txt-exito">correcta</span>
+          {% elif nvd.ultima_verificacion_ok is sameas false %}<span class="txt-critico">fallida</span>
+          {% else %}sin resultado{% endif %}
+          {% if nvd.ultima_verificacion_msg %}<div class="pequeno tenue">{{ nvd.ultima_verificacion_msg }}</div>{% endif %}
+        </div>
+        {% endif %}
+        <div class="ayuda mt-14">
+          <strong>Cómo obtener la clave (gratuita, 5 minutos).</strong>
+          <ol class="lista-pasos">
+            <li>Abra <span class="mono">nvd.nist.gov/developers/request-an-api-key</span>.</li>
+            <li>Indique el nombre de la organización, un correo del equipo y acepte los términos.</li>
+            <li>Recibirá un correo del NIST con un enlace de activación: <strong>hay que pulsarlo</strong>
+                (caduca a los 7 días). Al pulsarlo aparece la clave, un identificador de 36 caracteres con guiones.</li>
+            <li>Péguela arriba y guarde. La verificación hace una consulta real a NVD con esa clave.</li>
+          </ol>
+          Para vaciar la cola más deprisa una vez tenga la clave, suba «Máximo de CVE a enriquecer por ejecución»
+          en <a href="{{ url_for('ajustes.panel') }}">Administración → Ajustes → Enriquecimiento</a>
+          (por ejemplo a 1.500: unos dieciséis minutos por ejecución).
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ------------------------------------------------------- destinatarios #}
+<div class="panel" data-tour="4" data-tour-titulo="A quién llega cada correo" data-tour-texto="Alertas diarias, informe mensual y avisos al administrador. Varias direcciones separadas por comas.">
+  <div class="panel-cabecera">
+    <h2>Destinatarios</h2>
+    <span class="sub">Separe varias direcciones con comas</span>
+  </div>
+  <div class="panel-cuerpo">
+    <form method="post" action="{{ url_for('credenciales.destinatarios') }}"
+          data-accion-viva="pagina-credenciales" data-accion-espera="Guardando…">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="campo-fila">
+        <div class="campo">
+          <label for="d-alertas">Alertas diarias</label>
+          <input type="text" id="d-alertas" name="alertas"
+                 value="{{ destinatarios.alertas | join(', ') }}">
+        </div>
+        <div class="campo">
+          <label for="d-alertas-cc">Alertas — copia (CC)</label>
+          <input type="text" id="d-alertas-cc" name="alertas_cc"
+                 value="{{ destinatarios.alertas_cc | join(', ') }}">
+        </div>
+      </div>
+      <div class="campo-fila">
+        <div class="campo">
+          <label for="d-informes">Informe mensual</label>
+          <input type="text" id="d-informes" name="informes"
+                 value="{{ destinatarios.informes | join(', ') }}">
+        </div>
+        <div class="campo">
+          <label for="d-informes-cc">Informe — copia (CC)</label>
+          <input type="text" id="d-informes-cc" name="informes_cc"
+                 value="{{ destinatarios.informes_cc | join(', ') }}">
+        </div>
+      </div>
+      <div class="campo">
+        <label for="d-admin">Avisos de administración</label>
+        <input type="text" id="d-admin" name="administrador"
+               value="{{ destinatarios.administrador | join(', ') }}">
+        <div class="ayuda">Aquí llegan los avisos de fuente caída, caducidad de
+          credenciales y ejecución fallida. Es el buzón que evita que un fallo pase
+          desapercibido.</div>
+      </div>
+      <button class="btn primario" type="submit">Guardar destinatarios</button>
+    </form>
+  </div>
+</div>
+
+<div class="rejilla c2">
+  {% if avisos %}
+  <div class="panel">
+    <div class="panel-cabecera"><h2>Avisos enviados</h2></div>
+    <div class="panel-cuerpo sin-relleno">
+      <div class="tabla-envoltorio">
+        <table class="tabla-compacta">
+          <thead><tr><th>Tipo</th><th>Detalle</th><th>Cuándo</th></tr></thead>
+          <tbody>
+          {% for a in avisos %}
+            <tr>
+              <td><span class="insignia neutra" title="{{ a.kind }}">{{ a.kind | aviso_es }}</span></td>
+              <td class="pequeno">{{ (a.detail or '—') | detalle_es | recortar(60) }}</td>
+              <td class="nowrap pequeno tenue">{{ a.sent_at | hace }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if historial %}
+  <div class="panel">
+    <div class="panel-cabecera"><h2>Historial de cambios</h2></div>
+    <div class="panel-cuerpo sin-relleno">
+      <div class="tabla-envoltorio">
+        <table class="tabla-compacta">
+          <thead><tr><th>Acción</th><th>Usuario</th><th>Cuándo</th></tr></thead>
+          <tbody>
+          {% for h in historial %}
+            <tr>
+              <td><span title="{{ h.action }}">{{ h.action | accion_es }}</span>
+                {% if h.detail %}<div class="pequeno tenue">{{ h.detail | detalle_es | recortar(56) }}</div>{% endif %}
+              </td>
+              <td class="nowrap">{{ h.username or '—' }}</td>
+              <td class="nowrap pequeno tenue">{{ h.at | hace }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+</div>{# fin de la zona viva #}
+{% endblock %}
