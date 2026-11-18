@@ -1,37 +1,50 @@
-# PhantomCortex Requirements
-# Python 3.8+ required
+# ======================================================================
+# Sistema de Inteligencia de Amenazas - dependencias
+# ======================================================================
+# Instalacion:
+#   python3 -m venv .venv
+#   .venv/bin/pip install -r requirements.txt
+#
+# El modelo de traduccion EN->ES de ArgosTranslate NO viene con el paquete y
+# debe instalarse aparte (una sola vez, ~120 MB):
+#   .venv/bin/python -c "import argostranslate.package as p; \
+#       p.update_package_index(); \
+#       [p.install_from_path(q.download()) for q in p.get_available_packages() \
+#        if q.from_code=='en' and q.to_code=='es']"
+#
+# Se instala en $HOME/.local/share/argos-translate, asi que debe hacerlo el
+# MISMO usuario que ejecuta el cron (si).
+# ======================================================================
 
-# Core Dependencies
-feedparser==6.0.11          # RSS feed parsing
-python-dotenv==1.0.0        # Environment variable management
-pyyaml==6.0.1               # YAML configuration parsing
-requests==2.31.0            # HTTP requests
+# --- recoleccion ---
+feedparser==6.0.12          # parseo de RSS y Atom
+requests==2.32.3            # HTTP con reintentos y cabeceras controladas
 
-# Translation (Offline AI)
-argostranslate==1.9.1       # Offline translation engine
-argos-translate-files==1.1.1
+# --- configuracion ---
+python-dotenv==1.0.1        # lectura de config/credentials.env
 
-# Document Generation
-python-docx==1.1.0          # Word document generation
-Pillow==10.2.0              # Image processing for reports
+# --- informe ---
+python-docx==1.1.2          # generacion del .docx
+openpyxl==3.1.5             # hoja de calculo de la alerta (una pestana por vulnerabilidad)
+Pillow==12.3.0               # valida y normaliza el logo subido (formato real, no la extension)
 
-# Email & Alerts
-secure-smtplib==0.1.1       # Enhanced SMTP with security
+# --- traduccion ---
+argostranslate==1.10.0      # traduccion offline EN->ES (requiere el modelo)
+# Ollama se usa via su API HTTP: no necesita paquete de Python.
 
-# Data Processing
-python-dateutil==2.8.2      # Date/time utilities
+# --- interfaz de administracion ---
+Flask==3.0.3                # servidor de la interfaz interna
+bcrypt==4.2.0               # hash de contrasenas de acceso
+segno==1.6.6                # codigo QR (SVG) para el segundo factor TOTP; puro Python, sin dependencias
+waitress==3.0.0             # servidor WSGI de produccion
+# Jinja2 viene con Flask y se usa tambien para las plantillas de correo.
 
-# Logging & Monitoring
-colorlog==6.8.2             # Colored console logs
+# --- utilidades ---
+PyYAML==6.0.2               # lectura de configuracion auxiliar
 
-# Optional: Advanced Features
-# pandas==2.1.4             # Data analysis (uncomment if needed)
-# matplotlib==3.8.2         # Charts and graphs (uncomment if needed)
-# jinja2==3.1.3             # HTML templating (uncomment if needed)
-
-# Development Dependencies (install with: pip install -r requirements-dev.txt)
-# pytest==7.4.3             # Unit testing
-# pytest-cov==4.1.0         # Code coverage
-# black==24.1.1             # Code formatting
-# flake8==7.0.0             # Code linting
-# mypy==1.8.0               # Type checking
+# ======================================================================
+# NO se necesitan (restos de la arquitectura anterior, 922 MB en venv/):
+#   crewai, crewai-tools, langchain, langchain-community, chromadb, litellm
+# El directorio venv/ antiguo puede eliminarse tras validar el sistema nuevo.
+# ======================================================================
+pymysql==1.1.1             # lector de solo lectura de OCS Inventory (MariaDB)

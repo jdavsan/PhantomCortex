@@ -1,0 +1,474 @@
+{% extends "base.html" %}
+{% block titulo %}Activos{% endblock %}
+{% block contenido %}
+{#
+  Activos de la organización (docs/INVENTARIO_OCS_2026-09-04.md, apartado 3.3).
+  Orden de lectura: 1) qué pasa ahora (métricas y estado de la sincronización),
+  2) cuánto y cómo (reparto por sistema, sistemas con más activos y su soporte,
+  fin de soporte), 3) el buscador con los filtros y, en el panel siguiente, la lista
+  paginada con sus vistas rápidas, su recuento y su exportación (todo lo que depende
+  de los filtros va en ese panel, que es la zona que sustituye la búsqueda en vivo).
+  Sin style= ni on*= (CSP estricta): gráficos SVG del servidor.
+#}
+{% set sincronizado = sincro.servidores or sincro.equipos %}
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Activos de la organización" data-tour-texto="Los servidores y equipos de cómputo reales, leídos cada día de OCS Inventory. Para cada uno se sabe qué tiene instalado, si su sistema tiene soporte, en qué entorno y proceso está y qué vulnerabilidades le aplican de verdad.">
+  <div>
+    <h1>Activos de la organización</h1>
+    <p>Inventario real de <strong>servidores y equipos de cómputo</strong> leído de OCS Inventory.
+       Cada activo muestra qué vulnerabilidades le aplican de verdad según los paquetes y
+       versiones que tiene instalados, si su sistema sigue con soporte y si reporta al inventario.</p>
+  </div>
+  <div class="acciones-titulo">
+    <a class="btn" href="{{ url_for('activos.software') }}">Software y mapa de nombres</a>
+    {% if es_admin %}
+    <form method="post" action="{{ url_for('activos.sincronizar') }}" class="inline">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn primario" type="submit"{% if en_curso %} disabled{% endif %}>
+        {% if en_curso %}Actualizando inventario…{% else %}Actualizar inventario ahora{% endif %}
+      </button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{# ================================================== 1. qué pasa ahora #}
+{% if not sincronizado %}
+<div class="aviso aviso-nivel" role="status">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+  <div><strong>Todavía no se ha sincronizado con OCS Inventory.</strong>
+    Pulse «Sincronizar con OCS ahora» o ejecute <span class="mono">bin/sincronizar_ocs.py</span>.
+    La primera lectura de los dos servidores tarda unos minutos.</div>
+</div>
+{% endif %}
+
+<div class="rejilla c5 mb-18" id="indicadores-activos" data-tour="2" data-tour-titulo="Indicadores" data-tour-texto="Cuántos activos hay, cuántos tienen una vulnerabilidad confirmada en la versión instalada, cuántos están fuera de soporte, cuántos no reportan y cuántas tecnologías del inventario están realmente instaladas.">
+  <div class="panel metrica">
+    <div class="valor">{{ resumen.total | numero }}</div>
+    <div class="etiqueta">Activos</div>
+    <div class="nota">{{ resumen.servidores | numero }} servidores · {{ resumen.equipos | numero }} equipos de cómputo</div>
+  </div>
+  <div class="panel metrica {% if resumen.con_vulnerabilidades %}critico{% else %}neutro{% endif %}">
+    <div class="valor">{{ resumen.con_vulnerabilidades | numero }}</div>
+    <div class="etiqueta">Con vulnerabilidades confirmadas</div>
+    {#
+      Desde el 2026-09-10 esta cifra y la del panel «Remediación» de más abajo usan el
+      mismo criterio de severidad (crítica, alta y media), así que ya no hay dos números
+      de activos con criterios distintos en la misma página. Si aún difieren, el panel
+      «Remediación» explica por qué: remediaciones pendientes que esperan una evaluación
+      nueva o cuya amenaza se descartó a mano.
+    #}
+    {#
+      «176 con explotación activa (KEV)» no decía de qué eran esos 176 (auditoría de
+      tableros del 2026-09-15). Son ACTIVOS —un activo con veinte vulnerabilidades KEV
+      cuenta una vez—, no vulnerabilidades: la página de Amenazas cuenta 343
+      vulnerabilidades con explotación activa sobre los mismos datos. «De ellos» ata la
+      cifra a los activos de esta misma tarjeta.
+    #}
+    <div class="nota">versión instalada vulnerable{% if conteos_vista.kev %}; {{ conteos_vista.kev | numero }} de ellos con explotación activa (KEV){% endif %}</div>
+    {#
+      Reparto por frescura del inventario (2026-09-10). Un activo que lleva más de
+      ``ocs_stale_days`` días sin reportar tiene su vulnerabilidad calculada sobre datos
+      viejos: ni se puede afirmar ni negar. Se dice aquí mismo, con la cifra sin ellos y
+      con enlace a su lista, para que nadie tenga que adivinar si están dentro.
+    #}
+    {% if resumen.sin_reportar_afectados %}
+    <div class="nota">{{ resumen.con_vulnerabilidades_con_dato | numero }} con el inventario al día y
+      <a href="{{ url_for('activos.lista', vista='sin_reportar') }}">{{ resumen.sin_reportar_afectados | numero }} cuyo dato es de hace más de {{ resumen.dias_sin_reportar | numero }} días</a>:
+      su vulnerabilidad se calculó con el último dato conocido.</div>
+    {% elif resumen.dias_sin_reportar %}
+    <div class="nota">Todos reportaron el inventario en los últimos {{ resumen.dias_sin_reportar | numero }} días.</div>
+    {% endif %}
+  </div>
+  <div class="panel metrica {% if resumen.fuera_soporte %}alto{% else %}neutro{% endif %}">
+    <div class="valor">{{ resumen.fuera_soporte | numero }}</div>
+    <div class="etiqueta">Fuera de soporte</div>
+    <div class="nota">sistema sin actualizaciones de seguridad</div>
+  </div>
+  <div class="panel metrica {% if resumen.sin_reportar %}medio{% else %}neutro{% endif %}">
+    <div class="valor"><a href="{{ url_for('activos.lista', vista='sin_reportar') }}">{{ resumen.sin_reportar | numero }}</a></div>
+    <div class="etiqueta">Sin reportar al inventario</div>
+    <div class="nota">más de {{ dias_sin_reportar }} días sin enviar inventario. Mantenimiento del inventario, no una vulnerabilidad: es tarea de Redes revisar su agente de OCS Inventory o dar de baja la máquina.{% if resumen.sin_reportar_afectados %} De ellos, {{ resumen.sin_reportar_afectados | numero }} figuran con vulnerabilidades confirmadas calculadas con el último dato conocido: no se pueden ni afirmar ni negar hoy.{% endif %}</div>
+  </div>
+  {#
+    Un solo denominador para las tecnologías (2026-09-15, punto 7 de la revisión de
+    claridad): esta tarjeta decía «164 / 193», la página de Software «166 tecnologías con
+    activos» y la de Inventario tecnológico «197 tecnologías». Las tres cuentan ahora
+    sobre las 197 del inventario; la diferencia entre 164 y 166 eran dos tecnologías
+    desactivadas para el seguimiento que siguen instaladas, y se dice aquí mismo.
+  #}
+  <div class="panel metrica neutro">
+    <div class="valor">{{ resumen.tecnologias_con_activos | numero }} <span class="fs-18 tenue">/ {{ resumen.tecnologias_total | numero }}</span></div>
+    <div class="etiqueta">Tecnologías del inventario instaladas en algún activo</div>
+    <div class="nota">{{ resumen.tecnologias_con_activos | numero }} de las {{ resumen.tecnologias_total | numero }} tecnologías del <a href="{{ url_for('tecnologias.lista') }}">inventario tecnológico</a> están instaladas en algún activo{% if resumen.tecnologias_con_activos_desactivadas %}; {{ resumen.tecnologias_con_activos_desactivadas | numero }} de ellas {{ 'está desactivada' if resumen.tecnologias_con_activos_desactivadas == 1 else 'están desactivadas' }} para el seguimiento{% endif %}.
+      Del software instalado, {{ graficos.fmt(resumen.pct_mapeado_valor, resumen.pct_mapeado_decimales) }} % de las instalaciones está clasificado en una tecnología{% if resumen.instalaciones_sin_clasificar %} ({{ resumen.instalaciones_sin_clasificar | numero }} sin clasificar){% endif %}.</div>
+  </div>
+</div>
+
+{# ========================================= 2. cuánto y cómo #}
+<div class="rejilla uno-dos">
+  <div class="panel" data-tour="3" data-tour-titulo="Qué corre la organización" data-tour-texto="Reparto de los activos por familia de sistema operativo, de mayor a menor, cada familia con su color. El gris son los activos cuyo agente nunca envió el sistema.">
+    <div class="panel-cabecera">
+      <h2>Sistemas operativos</h2>
+      <span class="sub">¿Qué corre la organización? Reparto de los {{ resumen.total | numero }} activos presentes por familia de sistema, de mayor a menor.</span>
+    </div>
+    <div class="panel-cuerpo">
+      {{ graficos.dona(graf.familias, centro_valor=resumen.total, centro_etiqueta="activos",
+                       aria="Reparto de los " ~ resumen.total ~ " activos por familia de sistema operativo") }}
+      {% if resumen.sin_so %}
+      <p class="pequeno suave mt-12">{{ resumen.sin_so | numero }} activo{{ 's' if resumen.sin_so != 1 }} sin datos de sistema: el agente nunca envió inventario completo.</p>
+      {% endif %}
+    </div>
+  </div>
+  <div class="panel" data-tour="4" data-tour-titulo="Soporte por versión" data-tour-texto="Las versiones de sistema con más activos y hasta cuándo reciben parches de seguridad según endoflife.date. Cada versión tiene su propio color; el estado de soporte está escrito en la nota de cada barra, no en el color.">
+    <div class="panel-cabecera">
+      <h2>Versiones de sistema con más activos</h2>
+      <span class="sub">¿Qué versiones concentran el parque y cuál es su situación de soporte según endoflife.date? Solo versiones de sistema operativo, cada barra con un color distinto; pulse el nombre de una versión para ver en la tabla los activos de esa familia de sistema.</span>
+    </div>
+    <div class="panel-cuerpo">
+      {#
+        Solo versiones (auditoría de tableros del 2026-09-15). «Sin datos de sistema» salía
+        como una barra más dentro de un top de versiones, en quinto lugar sobre la base
+        real, y no es una versión: no se puede comparar con Debian 12 ni tiene fecha de
+        fin de soporte. Ahora va debajo, en su propia línea y con su enlace, y el top
+        contiene las doce versiones reales con más activos.
+      #}
+      {{ graficos.barras_horizontales(graf.sistemas, alto_fila=26, max_etiqueta=34, unidad=("activo", "activos"),
+                                      aria="Las " ~ (graf.sistemas | length) ~ " versiones de sistema operativo con más activos, cada una con su color, con el número de activos y el estado de soporte escritos junto a cada barra") }}
+      {% if graf.sistemas_fuera.versiones %}
+      <p class="pequeno suave mt-12">Se muestran las {{ graf.sistemas | length | numero }} versiones con más activos de {{ graf.sistemas_total | numero }} distintas; quedan fuera {{ graf.sistemas_fuera.versiones | numero }} {{ 'versión' if graf.sistemas_fuera.versiones == 1 else 'versiones' }} con {{ graf.sistemas_fuera.activos | numero }} {{ 'activo' if graf.sistemas_fuera.activos == 1 else 'activos' }}. La tabla de abajo las incluye todas; puede ordenarla por «Sistema» con el selector de orden.</p>
+      {% endif %}
+      {% if graf.sistemas_sin_datos %}
+      <p class="pequeno suave mt-12">Fuera de la gráfica, y sin competir con las versiones porque no lo son:
+        <a href="{{ url_for('activos.lista', familia='desconocido') }}">{{ graf.sistemas_sin_datos | numero }}
+        {{ 'activo' if graf.sistemas_sin_datos == 1 else 'activos' }} sin datos de sistema</a>,
+        cuyo agente de OCS Inventory nunca envió qué sistema operativo tienen. No se les puede
+        asignar una versión ni un estado de soporte.</p>
+      {% endif %}
+    </div>
+    <div class="panel-pie">
+      El color solo distingue una versión de otra. La nota de cada barra indica el número de activos y hasta
+      cuándo recibe actualizaciones de seguridad («fuera de soporte desde…», «fin de soporte el…»,
+      «con soporte hasta…» o «sin dato de soporte»). Un sistema fuera de soporte es vulnerable aunque
+      no tenga ningún CVE abierto en la lista.
+    </div>
+  </div>
+</div>
+
+{% if soporte.fuera or soporte.proximos %}
+<div class="panel" data-tour="5" data-tour-titulo="Sistemas sin actualizaciones" data-tour-texto="Detalle de los sistemas fuera de soporte o próximos a estarlo, con el número de activos en cada uno. Un sistema sin soporte es vulnerable aunque no tenga ningún CVE en la lista.">
+  <div class="panel-cabecera">
+    <h2>Fin de soporte</h2>
+    <div class="panel-acciones">
+      <a class="btn pequeno" href="{{ url_for('activos.lista', vista='fuera_soporte') }}">Ver activos fuera de soporte</a>
+    </div>
+    <span class="sub">Sistemas que ya no reciben parches o dejarán de recibirlos en los próximos seis meses, con el número de activos en cada uno.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead><tr><th>Sistema</th><th>Ciclo</th><th class="num">Activos</th><th>Fin de soporte</th><th>Situación</th></tr></thead>
+        <tbody>
+        {% for s in soporte.fuera %}
+          <tr>
+            <td>{{ s.sistema }}</td>
+            <td class="pequeno mono">{{ s.etiqueta }}</td>
+            <td class="num"><a href="{{ url_for('activos.lista', vista='fuera_soporte', familia=s.familia) }}">{{ s.activos | numero }}</a></td>
+            <td class="nowrap">{{ s.eol | fecha_es }}</td>
+            <td><span class="insignia critical">Sin soporte desde hace {{ (-s.dias) | numero }} días</span></td>
+          </tr>
+        {% endfor %}
+        {% for s in soporte.proximos %}
+          <tr>
+            <td>{{ s.sistema }}</td>
+            <td class="pequeno mono">{{ s.etiqueta }}</td>
+            <td class="num"><a href="{{ url_for('activos.lista', familia=s.familia) }}">{{ s.activos | numero }}</a></td>
+            <td class="nowrap">{{ s.eol | fecha_es }}</td>
+            <td><span class="insignia medium">Quedan {{ s.dias | numero }} días</span></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ============================================ 2b. procesos de negocio (servidores) #}
+{% if resumen.procesos %}
+<div class="rejilla dos-uno">
+  <div class="panel" data-tour="6" data-tour-titulo="Agrupación por proceso de negocio" data-tour-texto="Cada servidor pertenece a un proceso de negocio, que se anota en el campo «TAG» de OCS Inventory (la etiqueta libre con la que allí se marca a qué área pertenece cada máquina). La tabla dice cuántos servidores tiene cada proceso, cuántos están en producción o contingencia, cuántos tienen vulnerabilidades confirmadas y cuántos están fuera de soporte. Pulse un proceso para filtrar la lista.">
+    <div class="panel-cabecera">
+      <h2>Servidores por proceso</h2>
+      <span class="sub">Cada servidor pertenece a un proceso de negocio (campo «TAG» de OCS Inventory). Pulse un proceso para ver sus servidores.{% if resumen.sin_proceso %} {{ resumen.sin_proceso | numero }} servidor{{ 'es' if resumen.sin_proceso != 1 }} sin proceso asignado en OCS.{% endif %}</span>
+    </div>
+    <div class="panel-cuerpo sin-relleno">
+      <div class="tabla-envoltorio">
+        <table class="tabla-compacta">
+          <thead><tr><th>Proceso</th><th class="num">Servidores</th><th class="num" title="En producción o contingencia">Expuestos</th><th class="num" title="Con al menos un CVE confirmado en la versión instalada">Con vulnerabilidades</th><th class="num">Fuera de soporte</th></tr></thead>
+          <tbody>
+          {% for pr in resumen.procesos %}
+            <tr>
+              <td><a href="{{ url_for('activos.lista', proceso=pr.proceso, _anchor='lista-activos') }}" title="Ver los servidores del proceso «{{ pr.proceso }}»">{{ pr.proceso }}</a></td>
+              <td class="num">{{ pr.activos | numero }}</td>
+              <td class="num">{{ pr.expuestos | numero }}</td>
+              <td class="num {% if pr.con_vulnerabilidades %}txt-critico-b{% else %}tenue{% endif %}">{{ pr.con_vulnerabilidades | numero }}</td>
+              <td class="num {% if pr.fuera_soporte %}txt-alto{% else %}tenue{% endif %}">{{ pr.fuera_soporte | numero }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="panel" data-tour="7" data-tour-titulo="Producción, contingencia, desarrollo, pruebas y soporte" data-tour-texto="Cuántos activos hay en cada entorno, ordenados de más a menos expuesto y cada uno con su color; el gris son los activos sin entorno asignado. Producción y contingencia pesan más en la prioridad de cada amenaza. El entorno viene de OCS o del sufijo del nombre del servidor.">
+    <div class="panel-cabecera">
+      <h2>Entornos</h2>
+      <span class="sub">De más a menos expuesto: producción y contingencia pesan más en la prioridad de cada amenaza; en gris, los activos sin entorno asignado. Proviene de OCS o del sufijo del nombre (‑PD, ‑CT, ‑DS, ‑PU, ‑SP).</span>
+    </div>
+    <div class="panel-cuerpo">
+      {{ graficos.dona(graf.entornos, centro_valor=resumen.total, centro_etiqueta="activos", aria="Reparto de los activos por entorno") }}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# ================================================= 2c. remediación (v6) #}
+{% include "_remediaciones_resumen.html" %}
+
+{# ============================ 3. buscar, filtrar y listar #}
+{#
+  Filtrado, orden y paginación en el SERVIDOR (2026-09-07). Antes la página enviaba
+  las 881 filas del inventario y el navegador filtraba sobre ellas; con la paginación
+  el servidor devuelve solo la página pedida, así que los filtros van en la consulta.
+
+  El formulario de filtros lleva «data-filtro-vivo»: al escribir se vuelve a pedir la
+  página y se sustituye la zona «#lista-activos» sin recargar. Sin JavaScript el mismo
+  formulario funciona con el envío clásico.
+
+  Hallazgo del revisor (2026-09-07): TODO lo que depende de los filtros tiene que
+  estar DENTRO de la zona que se sustituye, o al filtrar sin recargar quedarían a la
+  vista cifras y enlaces de la búsqueda anterior. Por eso el panel del listado entero
+  es la zona («#lista-activos» está en el panel, no en su cuerpo) y lleva dentro el
+  recuento, las vistas rápidas con sus cifras y sus campos ocultos, la exportación y
+  la tabla. El formulario de filtros se queda FUERA, en su propio panel, porque
+  «webui/static/app.js» le engancha los escuchadores al cargar la página y
+  sustituirlo los perdería.
+#}
+{% from "_paginacion.html" import paginacion %}
+<div class="panel" data-tour="9" data-tour-titulo="Buscar y filtrar activos" data-tour-texto="Escriba un nombre, una dirección IP, un sistema, un usuario o un proceso y la lista de debajo se filtra mientras escribe. Los selectores acotan por tipo de activo, familia de sistema, entorno, proceso de negocio y tecnología instalada; el campo CVE muestra solo los activos con la versión vulnerable de ese identificador exacto. El último selector elige el orden. Todo lo aplica el servidor, así que los filtros se conservan al cambiar de página y al exportar.">
+  <div class="panel-cabecera">
+    <h2>Buscar activos</h2>
+    <span class="sub">La búsqueda se aplica mientras escribe y acota la lista de debajo. Se busca en el nombre,
+      la dirección IP, el sistema operativo, el usuario y el proceso de negocio del activo; los selectores de
+      tecnología y el campo CVE muestran qué activos tienen instalada una tecnología concreta o una
+      vulnerabilidad concreta.</span>
+  </div>
+  <div class="panel-cuerpo">
+    <form method="get" class="filtros" action="{{ url_for('activos.lista') }}" data-filtro-vivo="lista-activos">
+      <div class="campo flex2-220">
+        <label for="q">Nombre, IP, sistema, usuario o proceso</label>
+        <input type="search" id="q" name="q" value="{{ filtros.q }}" placeholder="srv-web, 10.1.1.21, Debian…" autocomplete="off" data-filtro-activos="q">
+      </div>
+      {% if not alcance_origen %}
+      <div class="campo">
+        <label for="origen">Tipo</label>
+        <select id="origen" name="origen" data-filtro-activos="origen">
+          <option value="">Todos</option>
+          {% for o, nombre in origen_plural.items() %}<option value="{{ o }}"{% if filtros.origen == o %} selected{% endif %}>{{ nombre }}</option>{% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      <div class="campo">
+        <label for="familia">Sistema</label>
+        <select id="familia" name="familia" data-filtro-activos="familia">
+          <option value="">Todos</option>
+          {% for f in familias %}<option value="{{ f }}"{% if filtros.familia == f %} selected{% endif %}>{{ familia_es[f] }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="entorno">Entorno</label>
+        <select id="entorno" name="entorno" data-filtro-activos="entorno">
+          <option value="">Todos</option>
+          {% for e in entornos %}<option value="{{ e }}"{% if filtros.entorno == e %} selected{% endif %}>{{ entorno_es[e] }}</option>{% endfor %}
+          <option value="desconocido"{% if filtros.entorno == 'desconocido' %} selected{% endif %}>Sin entorno</option>
+        </select>
+      </div>
+      {% if procesos_lista %}
+      <div class="campo">
+        <label for="proceso">Proceso</label>
+        <select id="proceso" name="proceso" data-filtro-activos="proceso">
+          <option value="">Todos</option>
+          {% for pr in procesos_lista %}<option value="{{ pr }}"{% if filtros.proceso == pr %} selected{% endif %}>{{ pr }}</option>{% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      <div class="campo">
+        <label for="tec">Tecnología</label>
+        <select id="tec" name="tec" data-filtro-activos="tec">
+          <option value="0">Todas</option>
+          {% for t in tecnologias_lista %}<option value="{{ t.id }}"{% if filtros.tec == t.id %} selected{% endif %}>{{ t.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="cve">CVE</label>
+        <input type="text" id="cve" name="cve" value="{{ filtros.cve }}" placeholder="CVE-2024-11053"
+               autocomplete="off" data-filtro-activos="cve">
+        <span class="ayuda">El identificador exacto; mayúsculas y minúsculas no importan.</span>
+      </div>
+      <div class="campo">
+        <label for="orden">Ordenar por</label>
+        <select id="orden" name="orden" data-orden-activos>
+          {% for o, nombre in orden_es.items() %}<option value="{{ o }}"{% if filtros.orden == o %} selected{% endif %}>{{ nombre }}</option>{% endfor %}
+        </select>
+      </div>
+      <input type="hidden" name="vista" value="{{ filtros.vista }}">
+      <div class="campo minw-auto">
+        <button class="btn pequeno" type="submit">Aplicar filtros</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="panel" id="lista-activos" tabindex="-1" data-zona-viva
+     data-zona-nombre="Lista de activos" data-tour="10" data-tour-titulo="La lista completa" data-tour-texto="Los activos que cumplen los filtros, por páginas de {{ por_pagina | numero }}. Las vistas rápidas de arriba acotan la lista sin perder lo que haya escrito en el buscador y cada una dice cuántos activos vería al pulsarla. Los controles del final llevan a la primera, a la anterior, a la siguiente y a la última página. El botón «N · ver» de cada fila despliega sus vulnerabilidades sin salir de la lista; el nombre abre la ficha completa.">
+  <div class="panel-cabecera">
+    <h2>Activos</h2>
+    <div class="panel-acciones">
+      <a class="btn pequeno" href="{{ url_for('activos.exportar', **args) }}" data-exportar-activos
+         title="Exporta todas las filas que cumplen los filtros, no solo las de esta página">Exportar CSV</a>
+    </div>
+    {#
+      Vistas rápidas: cada atajo es un botón de envío que pide la misma página con
+      «vista» cambiada, así que el filtro lo aplica el servidor. Van en su propio
+      formulario (no en el de los filtros) porque la búsqueda en vivo esconde los
+      botones de envío del formulario que gobierna; los demás filtros viajan en
+      campos ocultos para que el atajo no los pierda, y se vuelven a pintar en cada
+      refresco porque este panel es la zona que se sustituye.
+    #}
+    <form method="get" action="{{ url_for('activos.lista') }}" class="chips-rapidos" aria-label="Vistas rápidas">
+      <span class="etiqueta-chips">Vistas rápidas:</span>
+      {% for clave, valor in args.items() %}{% if clave != 'vista' %}<input type="hidden" name="{{ clave }}" value="{{ valor }}">{% endif %}{% endfor %}
+      {% for v in vistas %}
+        {% set n = conteos_vista.get(v) %}
+        <button type="submit" name="vista" value="{{ v }}"
+                class="chip {% if v in ('afectados', 'kev') %}critico {% endif %}{% if filtros.vista == v %}activo{% endif %}"
+                data-vista="{{ v }}" aria-pressed="{{ 'true' if filtros.vista == v else 'false' }}">
+          {{ vista_es[v] }}{% if n is not none and v != 'todos' %} ({{ n | numero }}){% endif %}
+        </button>
+      {% endfor %}
+      {% if filtros.q or filtros.origen or filtros.familia or filtros.entorno or filtros.proceso or filtros.tec or filtros.cve or filtros.vista != 'todos' or filtros.orden != 'riesgo' %}
+      <a class="btn pequeno" href="{{ url_for('activos.lista', _anchor='lista-activos') }}">Limpiar filtros</a>
+      {% endif %}
+    </form>
+    <span class="sub">{{ total | numero }} activo{{ 's' if total != 1 }} con estos filtros{% if tecnologia_filtro %}, con {{ tecnologia_filtro }} instalado{% endif %}{% if filtros.cve %}, afectados por {{ filtros.cve }}{% endif %}.
+      La lista viene por páginas de {{ por_pagina | numero }} activos y el recuento de cada vista rápida dice
+      cuántos activos quedarían al pulsarla, con los filtros que ya haya puesto.
+      «Vulnerabilidades» cuenta los CVE con la versión instalada confirmada como vulnerable; pulse el número para desplegarlos.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno" id="tabla-activos">
+    {% if filas %}
+    <div class="tabla-envoltorio">
+      <table data-tabla-activos class="tabla-activos">
+        {# Nueve columnas desde el 2026-09-07 (tipo, entorno y proceso separados). La tabla
+           es de ancho fijo, así que el reparto tiene que declararse aquí: sin esto, las dos
+           columnas nuevas se quedaban sin anchura y el contenido se apilaba letra a letra
+           (filas de 1.055 píxeles). Los porcentajes suman 100. #}
+        <colgroup>
+          <col class="col-activo"><col class="col-tipo"><col class="col-entorno"><col class="col-proceso">
+          <col class="col-sistema"><col class="col-fecha">
+          <col class="col-software"><col class="col-vulns"><col class="col-hallazgos">
+        </colgroup>
+        <thead>
+          <tr>
+            {# Tres columnas separadas desde el 2026-09-07: el tipo, el entorno y el
+               proceso se leen y se ordenan por separado, y salen asi en el CSV. #}
+            <th>Activo</th>
+            <th title="Servidor o equipo de cómputo, según lo que reporta OCS Inventory">Tipo</th>
+            <th title="Producción, contingencia, desarrollo, pruebas o soporte">Entorno</th>
+            <th title="Proceso de negocio al que pertenece el activo; se anota en el campo «TAG» de OCS Inventory">Proceso</th>
+            <th>Sistema</th>
+            {# «Último inventario» y «Vulnerabilidades» se leían cortadas (17 px y 29 px de
+               texto fuera de la celda) porque la regla general de «th» impone una sola
+               línea; ahora esas cabeceras admiten dos (estilo.css, sección del
+               2026-09-09) y la columna de vulnerabilidades tiene anchura para la
+               insignia «KEV 7», que se cortaba a «KE». #}
+            <th title="Fecha del último inventario que envió el agente de OCS Inventory">Último inventario</th>
+            {# «Software 86 / 86» no decía qué eran esos dos números (revisión de claridad
+               del 2026-09-15, punto 9): ahora el rótulo lleva la unidad escrita. #}
+            <th class="num" title="Programas instalados clasificados en una tecnología del inventario, sobre el total de programas instalados">Software clasificado <span class="pequeno tenue">de total instalado</span></th>
+            <th class="num" title="CVE abiertos cuya versión instalada está confirmada como vulnerable; se cuenta uno por activo y CVE">Vulnerabilidades</th>
+            <th>Hallazgos</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for a in filas %}
+          <tr data-id="{{ a.id }}" data-nombre="{{ a.nombre | lower }}" data-ip="{{ (a.ip or '') | lower }}" data-so="{{ ((a.so_nombre or '') ~ ' ' ~ (a.so_version or '')) | lower }}"
+              data-usuario="{{ (a.usuario or '') | lower }}" data-origen="{{ a.origen }}" data-familia="{{ a.so_familia }}" data-entorno="{{ a.entorno or 'desconocido' }}"
+              data-proceso="{{ a.proceso or '' }}" data-vistas="{{ a.vistas }}" data-afectados="{{ a.afectados }}" data-kev="{{ a.kev }}"
+              data-inventario="{{ a.ultimo_inventario or '' }}" data-presente="{{ 1 if a.presente else 0 }}">
+            <td>
+              <a class="envolver" href="{{ url_for('activos.detalle', activo_id=a.id) }}">{{ a.nombre }}</a>
+              {% if not a.presente %}<span class="insignia neutra">ya no está en OCS</span>{% endif %}
+              <div class="pequeno tenue envolver">{% if a.ip %}<span class="mono">{{ a.ip | recortar(30) }}</span>{% endif %}{% if a.usuario %} · {{ a.usuario }}{% endif %}{% if a.zona != 'interna' %} · <span class="txt-critico-b">{{ a.zona_es }}</span>{% endif %}</div>
+            </td>
+            <td class="pequeno">{{ a.origen_es }}</td>
+            <td class="pequeno">
+              {% if a.entorno %}<span class="insignia entorno-{{ a.entorno }}" title="{% if a.expuesto %}Entorno expuesto: pesa más en la prioridad{% else %}Entorno no expuesto{% endif %}">{{ a.entorno_es }}</span>
+              {% else %}<span class="tenue">Sin entorno</span>{% endif %}
+            </td>
+            <td class="pequeno envolver">
+              {% if a.proceso %}{{ a.proceso }}
+              {% else %}<span class="tenue">Sin proceso</span>{% endif %}
+            </td>
+            <td>
+              {{ a.so_nombre or 'Sin datos' }}
+              {% if a.so_version and a.so_version != a.so_ciclo %}<span class="mono pequeno tenue">{{ a.so_version | recortar(22) }}</span>{% endif %}
+              {# Fechas con el filtro de español, nunca en formato ISO: estos dos títulos
+                 emergentes decían «2025-10-14» (revisión visual del 2026-09-09). #}
+              {% if a.soporte and a.soporte.fuera %}<div><span class="insignia critical" title="Sin soporte desde el {{ a.soporte.eol | fecha_es }}">Fuera de soporte</span></div>
+              {% elif a.soporte and a.soporte.proximo %}<div><span class="insignia medium" title="Fin de soporte el {{ a.soporte.eol | fecha_es }}">Soporte hasta {{ a.soporte.eol | fecha_es }}</span></div>{% endif %}
+            </td>
+            <td class="pequeno">
+              {{ a.ultimo_inventario | hace }}
+              {% if a.sin_reportar %}<div><span class="insignia medium" title="{{ explicacion_hallazgo['sin_reportar'] }}">Sin reportar</span></div>{% endif %}
+            </td>
+            <td class="num">{{ a.n_mapeado | numero }} <span class="tenue">/ {{ a.n_software | numero }}</span></td>
+            <td class="num col-vulns-celda">
+              {% if a.afectados %}
+                <button type="button" class="btn pequeno peligro-suave" data-vulns="{{ a.id }}" aria-expanded="false" title="Desplegar las vulnerabilidades confirmadas de este activo">{{ a.afectados | numero }} · ver</button>
+              {% else %}<span class="tenue">0</span>{% endif %}
+              {% if a.kev %}<span class="insignia kev" title="{{ a.kev }} vulnerabilidad{{ 'es' if a.kev != 1 }} con explotación activa confirmada por CISA">KEV {{ a.kev }}</span>{% endif %}
+            </td>
+            <td class="pequeno">
+              {% for h in a.hallazgos_detalle %}
+                <div><span class="insignia {% if h.tipo == 'fin_soporte' %}critical{% elif h.tipo == 'software_riesgo' %}high{% else %}medium{% endif %}" title="{{ h.explicacion }}">{{ h.tipo_es }}{% if h.resumen %}: {{ h.resumen | recortar(36) }}{% endif %}</span></div>
+              {% else %}<span class="tenue">—</span>{% endfor %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="vacio" data-vacio-activos hidden><p>Ningún activo coincide con los filtros.</p></div>
+    {{ paginacion('activos.lista', args, pagina, paginas, total, por_pagina,
+                  singular='activo', plural='activos', ancla='lista-activos', zona='lista-activos',
+                  titulo='Paginación de la lista de activos') }}
+    {% else %}
+    <div class="vacio" data-vacio-activos>
+      <p>{% if not sincronizado %}Todavía no hay activos: sincronice con OCS Inventory.{% elif filtros.q or filtros.origen or filtros.familia or filtros.entorno or filtros.proceso or filtros.tec or filtros.cve or filtros.vista != 'todos' %}Ningún activo coincide con los filtros.{% else %}No hay activos.{% endif %}</p>
+      {% if filtros.q or filtros.origen or filtros.familia or filtros.entorno or filtros.proceso or filtros.tec or filtros.cve or filtros.vista != 'todos' %}
+      <p class="pequeno">Pruebe a quitar la vista rápida, cambiar el texto buscado o <a href="{{ url_for('activos.lista', _anchor='lista-activos') }}">limpiar los filtros</a>.</p>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  <div class="panel-pie">
+    {% for origen, s in sincro.items() %}
+      <strong>{{ origen_plural[origen] }}:</strong>
+      {% if s %}{% if s.status == 'running' %}sincronización en curso desde {{ s.started_at | hace }}{% elif s.status == 'failed' %}<span class="txt-critico">falló {{ s.started_at | hace }}</span>{% if s.error %} ({{ s.error | recortar(90) }}){% endif %}{% else %}{{ s.activos | numero }} activos y {{ s.software | numero }} programas leídos {{ s.finished_at | hace }}{% if s.nuevos or s.cambiados %} ({{ s.nuevos }} nuevos, {{ s.cambiados }} con cambios){% endif %}{% endif %}{% else %}sin sincronizar{% endif %}{% if not loop.last %} · {% endif %}
+    {% endfor %}
+    · La sincronización automática se ejecuta cada día antes de la recolección.
+    <strong>Hallazgos:</strong> {% for t, e in explicacion_hallazgo.items() %}<em>{{ tipo_hallazgo_es[t] }}</em>: {{ e }} {% endfor %}
+  </div>
+</div>
+{% endblock %}

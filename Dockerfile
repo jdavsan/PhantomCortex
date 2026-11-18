@@ -1,73 +1,56 @@
-# PhantomCortex Dockerfile
-# Multi-stage build for optimized image size
+# Dockerfile para Inteligencia de Amenazas
+# Usa Python 3.13 en Alpine Linux para minimizar la imagen
+FROM python:3.13-alpine
 
-# Stage 1: Build stage
-FROM python:3.11-slim as builder
+# Metadatos
+LABEL maintainer="Inteligencia de Amenazas Team"
+LABEL description="Sistema de Inteligencia de Amenazas - Recolección y Alertamiento"
 
-# Set working directory
-WORKDIR /app
-
-# Install build dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements
-COPY requirements.txt .
-
-# Install Python dependencies
-RUN pip install --no-cache-dir --user -r requirements.txt
-
-# Download translation model
-RUN pip install --no-cache-dir --user argostranslate && \
-    python -c "import argostranslate.package; \
-    argostranslate.package.update_package_index(); \
-    available = argostranslate.package.get_available_packages(); \
-    en_es = next((p for p in available if p.from_code == 'en' and p.to_code == 'es'), None); \
-    if en_es: argostranslate.package.install_from_path(en_es.download())"
-
-# Stage 2: Runtime stage
-FROM python:3.11-slim
-
-# Set labels
-LABEL maintainer="PhantomCortex Community"
-LABEL description="Open Source Cyber Threat Intelligence Platform"
-LABEL version="1.0.0"
-
-# Set environment variables
+# Variables de entorno
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PATH=/root/.local/bin:$PATH
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
-# Create app user
-RUN useradd -m -u 1000 phantomcortex && \
-    mkdir -p /app /data /logs /reports && \
-    chown -R phantomcortex:phantomcortex /app /data /logs /reports
-
-# Set working directory
+# Directorio de trabajo
 WORKDIR /app
 
-# Copy Python packages from builder
-COPY --from=builder /root/.local /root/.local
+# Instalar dependencias del sistema
+RUN apk add --no-cache \
+    gcc \
+    musl-dev \
+    libxml2-dev \
+    libxslt-dev \
+    openssl-dev \
+    libffi-dev \
+    sqlite \
+    curl
 
-# Copy application files
-COPY --chown=phantomcortex:phantomcortex core/ ./core/
-COPY --chown=phantomcortex:phantomcortex modules/ ./modules/
-COPY --chown=phantomcortex:phantomcortex scripts/ ./scripts/
-COPY --chown=phantomcortex:phantomcortex config/ ./config/
-COPY --chown=phantomcortex:phantomcortex requirements.txt .
+# Crear usuario no-root para ejecutar la aplicación
+RUN addgroup -S appuser && adduser -S appuser -G appuser
 
-# Create necessary directories
-RUN mkdir -p data logs reports backups && \
-    chmod +x scripts/*.sh scripts/*.py
+# Copiar requirements
+COPY requirements.txt .
 
-# Switch to app user
-USER phantomcortex
+# Instalar dependencias Python
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copiar código de la aplicación
+COPY --chown=appuser:appuser . .
+
+# Crear directorios necesarios
+RUN mkdir -p /app/data /app/logs /app/config/mapeos && \
+    chown -R appuser:appuser /app
+
+# Cambiar a usuario no-root
+USER appuser
 
 # Health check
-HEALTHCHECK --interval=5m --timeout=3s \
-    CMD python -c "import sys; sys.exit(0)"
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:9090/ || exit 1
 
-# Default command
-CMD ["python", "core/collector.py"]
+# Puerto de la aplicación web
+EXPOSE 9090
+
+# Comando de inicio
+CMD ["python", "-m", "webui.app"]

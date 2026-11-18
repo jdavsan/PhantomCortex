@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{#
+  Informe de inventario para Redes: maquinas que llevan mas de N dias sin
+  reportar a OCS Inventory. Se separo del correo de alertamiento diario el 2026-09-07 a
+  peticion del usuario: mantener el inventario al dia no es una tarea de seguridad, y
+  mezclarlo con las vulnerabilidades hacia que se leyera como un hallazgo de seguridad.
+  Se reparte por servidores y equipos de cómputo porque los responsables no son los mismos.
+#}
+{% block titulo %}Inventario sin reportar{% endblock %}
+{% block color_barra %}#2b6cb0{% endblock %}
+{% block etiqueta_cabecera %}{{ ahora().strftime('%d/%m/%Y') }}{% endblock %}
+{% block contenido %}
+
+<div style="font-family:Arial,Helvetica,sans-serif; font-size:16px; font-weight:bold;
+            color:#1f2933; line-height:1.35; margin:0 0 4px 0;">
+  Inventario sin reportar
+</div>
+<p style="margin:0 0 16px 0; font-family:Arial,Helvetica,sans-serif; font-size:12px;
+          color:#63707e; line-height:1.55;">
+  Activos que no envían su inventario a OCS Inventory desde hace más de {{ datos.dias }} días
+</p>
+
+<p style="margin:0 0 16px 0; font-family:Arial,Helvetica,sans-serif; font-size:13px;
+          color:#2b3540; line-height:1.65;">
+  {% if datos.total %}
+  <strong>{{ datos.total|numero }} de {{ datos.activos_presentes|numero }} activos</strong>
+  llevan más de {{ datos.dias }} días sin enviar su inventario. Mientras no reporten, lo que la
+  plataforma sabe de ellos es lo último que recibió: puede que ya estén corregidos, o que tengan
+  software nuevo que nadie ha revisado. No es un hallazgo de seguridad, es inventario
+  desactualizado, y por eso va en un correo aparte.
+  {% else %}
+  Todos los {{ datos.activos_presentes|numero }} activos del inventario han reportado en los
+  últimos {{ datos.dias }} días. No hay nada que revisar.
+  {% endif %}
+</p>
+
+{% if datos.total %}
+{# --------------------------------------- las dos cifras, escritas con palabras #}
+{#
+  El usuario pidio el 2026-09-15 que el correo diga las dos cifras y que se entienda sin
+  abrir los adjuntos: «N servidores de M» y «N equipos de cómputo de M», cada una con su
+  enlace a la lista de la plataforma.
+#}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 22px 0; border-left:4px solid #2b6cb0; background-color:#f7fafd;">
+  <tr>
+    <td style="padding:14px 16px; font-family:Arial,Helvetica,sans-serif; font-size:13px;
+               color:#1f3a5f; line-height:1.7;">
+      {% for g in datos.grupos %}
+      <div style="margin:0 0 6px 0;">
+        <strong style="font-size:15px;">{{ g.sin_reportar|numero }}
+        {{ 'servidores' if g.origen == 'servidores' else 'equipos de cómputo' }}</strong>
+        de {{ g.total|numero }} ({{ g.pct|decimal(1) }} %)
+        {%- if g.sin_reportar %} llevan más de {{ datos.dias }} días sin enviar su inventario.
+        {%- else %} reportan todos al día.{% endif %}
+      </div>
+      {% endfor %}
+      {% if url_activos %}
+      <div style="margin-top:8px; font-size:12px;">La lista completa, con su ficha y su
+        historial, está en la plataforma:
+        <a href="{{ url_activos|url_segura }}" style="color:#1f4e78;">{{ url_activos }}</a></div>
+      {% endif %}
+    </td>
+  </tr>
+</table>
+
+{% if adjuntos %}
+{# ------------------------------------------------ que lleva cada fichero adjunto #}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 22px 0; border:1px solid #e3e7ec; background-color:#fafbfc;">
+  <tr>
+    <td style="padding:14px 18px 6px 18px; font-family:Arial,Helvetica,sans-serif;
+               font-size:12px; font-weight:bold; color:#4a5563;
+               text-transform:uppercase; letter-spacing:.04em;">
+      Ficheros adjuntos ({{ adjuntos|selectattr('fichero')|list|length }})
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 18px 14px 18px; font-family:Arial,Helvetica,sans-serif;
+               font-size:12px; color:#2b3540; line-height:1.65;">
+      {% for a in adjuntos %}
+      <div style="margin:0 0 8px 0;">
+        {% if a.fichero %}
+        <strong>{{ a.fichero }}</strong> — {{ a.filas|numero }}
+        {{ 'servidores' if a.origen == 'servidores' else 'equipos de cómputo' }}
+        de {{ a.total|numero }}, con nombre del activo, dirección IP, proceso de negocio,
+        entorno, sistema operativo y versión, zona de red, usuario o responsable, días sin
+        reportar, fecha del último inventario, fecha en que se vio por última vez y cuántas
+        vulnerabilidades confirmadas arrastra. Ordenado de más a menos tiempo sin reportar.
+        {% else %}
+        <strong>No se adjunta el fichero de
+          {{ 'servidores' if a.origen == 'servidores' else 'equipos de cómputo' }}</strong>:
+        los {{ a.total|numero }}
+        {{ 'servidores' if a.origen == 'servidores' else 'equipos de cómputo' }}
+        del inventario han reportado dentro del plazo.
+        {% endif %}
+      </div>
+      {% endfor %}
+    </td>
+  </tr>
+</table>
+{% endif %}
+
+{# ------------------------------------------------------- reparto por origen #}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 22px 0; border:1px solid #e3e7ec; background-color:#fafbfc;">
+  <tr>
+    <td style="padding:16px 18px 6px 18px; font-family:Arial,Helvetica,sans-serif;
+               font-size:12px; font-weight:bold; color:#4a5563;
+               text-transform:uppercase; letter-spacing:.04em;">
+      Reparto por tipo de activo
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:0 18px 14px 18px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+             style="border:1px solid #eef0f3; border-collapse:collapse;">
+        <tr style="background-color:#f2f4f7;">
+          {% for cab in ['Tipo', 'Sin reportar', 'Del total', 'Proporción'] %}
+          <th align="{{ 'left' if loop.first else 'right' }}"
+              style="padding:8px 10px; font-family:Arial,Helvetica,sans-serif; font-size:10px;
+                     color:#63707e; text-transform:uppercase; letter-spacing:.04em;
+                     border-bottom:1px solid #d8dce2;">{{ cab }}</th>
+          {% endfor %}
+        </tr>
+        {% for g in datos.grupos %}
+        <tr style="background-color:{{ '#ffffff' if loop.index0 % 2 == 0 else '#fafbfc' }};">
+          <td style="padding:10px; font-family:Arial,Helvetica,sans-serif; font-size:12px;
+                     color:#1f2933; border-bottom:1px solid #eef0f3;">{{ g.origen_es }}</td>
+          <td align="right" style="padding:10px; font-family:Arial,Helvetica,sans-serif;
+                     font-size:14px; font-weight:bold; border-bottom:1px solid #eef0f3;
+                     color:{% if g.sin_reportar %}#8a6d0b{% else %}#1e7e46{% endif %};">{{ g.sin_reportar|numero }}</td>
+          <td align="right" style="padding:10px; font-family:Arial,Helvetica,sans-serif;
+                     font-size:12px; color:#4a5563; border-bottom:1px solid #eef0f3;">{{ g.total|numero }}</td>
+          <td align="right" style="padding:10px; font-family:Arial,Helvetica,sans-serif;
+                     font-size:12px; color:#4a5563; border-bottom:1px solid #eef0f3;">{{ g.pct|decimal(1) }} %</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </td>
+  </tr>
+</table>
+
+{# ------------------------------------------------------- una tabla por origen #}
+{% for g in datos.grupos %}
+{% if g.filas %}
+<div style="font-family:Arial,Helvetica,sans-serif; font-size:12px; font-weight:bold;
+            color:#4a5563; text-transform:uppercase; letter-spacing:.04em;
+            margin:0 0 10px 0;">
+  {{ g.origen_es }} ({{ g.sin_reportar|numero }})
+</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 24px 0; border:1px solid #e3e7ec; border-collapse:collapse;">
+  <tr style="background-color:#f2f4f7;">
+    {% for cab in ['Activo', 'Dirección de red', 'Sistema', 'Proceso', 'Último inventario'] %}
+    <th align="left" style="padding:8px 10px; font-family:Arial,Helvetica,sans-serif; font-size:10px;
+               color:#63707e; text-transform:uppercase; letter-spacing:.04em;
+               border-bottom:1px solid #d8dce2;">{{ cab }}</th>
+    {% endfor %}
+  </tr>
+  {% for f in g.filas %}
+  <tr style="background-color:{{ '#ffffff' if loop.index0 % 2 == 0 else '#fafbfc' }};">
+    <td style="padding:9px 10px; font-family:Arial,Helvetica,sans-serif; font-size:12px;
+               color:#2b3540; border-bottom:1px solid #eef0f3;">
+      <strong>{{ f.nombre }}</strong>
+      {%- if f.usuario %}<div style="font-size:10px; color:#8a939f;">{{ f.usuario|recortar(34) }}</div>{% endif %}
+    </td>
+    <td style="padding:9px 10px; font-family:Consolas,monospace; font-size:11px;
+               color:#4a5563; border-bottom:1px solid #eef0f3;">{{ f.ip or '—' }}</td>
+    <td style="padding:9px 10px; font-family:Arial,Helvetica,sans-serif; font-size:11px;
+               color:#4a5563; border-bottom:1px solid #eef0f3;">{{ f.so_nombre|recortar(28) if f.so_nombre else 'sin datos' }}</td>
+    <td style="padding:9px 10px; font-family:Arial,Helvetica,sans-serif; font-size:11px;
+               color:#4a5563; border-bottom:1px solid #eef0f3;">{{ f.proceso|recortar(22) if f.proceso else 'sin proceso' }}</td>
+    <td style="padding:9px 10px; font-family:Arial,Helvetica,sans-serif; font-size:11px;
+               border-bottom:1px solid #eef0f3;
+               color:{% if f.nunca %}#b3261e{% else %}#8a6d0b{% endif %};">
+      {%- if f.nunca %}nunca ha reportado
+      {%- else %}{{ f.ultimo_inventario|fecha_larga }}{% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endfor %}
+
+{% if datos.recortado %}
+<p style="margin:0 0 16px 0; font-family:Arial,Helvetica,sans-serif; font-size:11px;
+          color:#8a939f; line-height:1.6;">
+  Se listan los {{ datos.limite_por_grupo|numero }} más antiguos de cada tipo
+  {%- for g in datos.grupos %}{% if g.restantes %}; quedan {{ g.restantes|numero }}
+  {{ g.origen_es|lower }} más{% endif %}{% endfor %}. El listado completo está en la
+  interfaz, en Activos, con la vista rápida «Sin reportar».
+</p>
+{% endif %}
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 8px 0; border-left:4px solid #2b6cb0; background-color:#eef4fb;">
+  <tr>
+    <td style="padding:13px 16px; font-family:Arial,Helvetica,sans-serif; font-size:12px;
+               color:#1f3a5f; line-height:1.65;">
+      <strong>Qué suele ser.</strong> Un activo deja de reportar porque se apagó o se retiró y
+      nadie lo dio de baja en OCS, porque el agente se detuvo o se desinstaló, o porque cambió
+      de red y no alcanza al servidor de OCS. Los que ya no existan conviene darlos de baja en
+      OCS: así dejan de contar aquí y de aparecer en los informes.
+      {% if url_activos %}
+      <div style="margin-top:8px;">Listado y detalle:
+        <a href="{{ url_activos|url_segura }}" style="color:#1f4e78;">{{ url_activos }}</a></div>
+      {% endif %}
+    </td>
+  </tr>
+</table>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% block titulo %}{{ fuente.name }}{% endblock %}
+{% block contenido %}
+{# Zona viva (2026-09-10): esta pantalla se actualiza sin recargar. Las acciones
+   marcadas con `data-accion-viva` y los enlaces de esta misma dirección piden la
+   página al servidor y sustituyen solo este trozo, así que no se pierde el sitio
+   ni la posición de desplazamiento. Sin JavaScript todo funciona igual que antes,
+   con recarga. Contrato en docs/INTERACCION_SIN_RECARGA_2026-09-10.md. #}
+<div id="pagina-fuente" data-zona-viva data-zona-nombre="Ficha de la fuente" tabindex="-1">
+{#
+  Ficha de una fuente (sección 6 «Fuentes» de docs/DISENO_INTERFAZ_2026-09-03.md).
+  Orden de lectura: 1) qué pasa ahora (métricas y tasa de éxito), 2) cómo
+  evoluciona (latencia y entradas de las últimas comprobaciones), 3) configuración
+  y 4) historial en tabla. Sin style= ni on*= (CSP estricta).
+#}
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Ficha de una fuente" data-tour-texto="Una fuente es un sitio o servicio del que la plataforma lee avisos de seguridad. Aquí se ve si responde, cuánto tarda, cuánto aporta y cómo está configurada. Con los botones de la derecha se puede probar ahora mismo o activarla y desactivarla.">
+  <div>
+    <h1>{{ fuente.name }}</h1>
+    <p><span class="mono">{{ fuente.url }}</span></p>
+  </div>
+  <div class="acciones-titulo">
+    {# Probar sale a Internet contra la fuente y queda en la auditoría: es una acción,
+       no una consulta, así que el perfil «Solo lectura» no la ve (2026-09-07). #}
+    {% if es_admin %}
+    <form method="post" action="{{ url_for('fuentes.probar', source_id=fuente.id) }}"
+          data-accion-viva="pagina-fuente" data-accion-espera="Comprobando…" data-accion-tiempo="120000">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn primario" type="submit">Probar ahora</button>
+    </form>
+    <form method="post" action="{{ url_for('fuentes.activar', source_id=fuente.id) }}"
+          data-accion-viva="pagina-fuente" data-accion-espera="Aplicando…">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="enabled" value="{{ 0 if fuente.enabled else 1 }}">
+      <button class="btn" type="submit">{{ 'Desactivar' if fuente.enabled else 'Activar' }}</button>
+    </form>
+    {% endif %}
+    <a class="btn" href="{{ url_for('fuentes.lista') }}">Volver</a>
+  </div>
+</div>
+
+{# ================================================== 1. qué pasa ahora #}
+<div class="rejilla c4 mb-18" data-tour="2" data-tour-titulo="Estado y cifras" data-tour-texto="Si la fuente está activa (se consulta en cada recolección), a qué categoría pertenece y con qué prioridad, cuántas amenazas distintas ha aportado en todo el histórico y de qué tipo técnico es.">
+  <div class="panel metrica {% if fuente.enabled %}exito{% else %}neutro{% endif %}">
+    <div class="valor fs-18">{{ 'Activa' if fuente.enabled else 'Desactivada' }}</div>
+    <div class="etiqueta">Estado</div>
+    <div class="nota">{% if fuente.enabled %}se consulta en cada recolección{% else %}no se consulta{% endif %}</div>
+  </div>
+  <div class="panel metrica">
+    <div class="valor fs-18"><span class="leyenda-punto serie-{{ fuente.categoria_clave }}"></span> {{ fuente.categoria_es }}</div>
+    <div class="etiqueta">Categoría</div>
+    <div class="nota">prioridad {{ fuente.prioridad_es | lower }}</div>
+  </div>
+  {# Revisión de claridad del 2026-09-15: una fuente de enriquecimiento (la que aporta la
+     puntuación oficial, la explotación activa confirmada o la probabilidad de explotación)
+     enseñaba «0 amenazas aportadas» y «0 % de las recibidas» junto a un texto que la
+     llamaba imprescindible. No aporta amenazas por diseño, y ahora lo dice la propia
+     tarjeta en lugar de dejar un cero que parece un fallo. #}
+  {% set de_enriquecimiento = fuente.kind in ('kev_json', 'nvd_api', 'epss_api', 'dataset') %}
+  <div class="panel metrica {% if de_enriquecimiento %}neutro{% elif amenazas %}secundario{% else %}neutro{% endif %}">
+    {% if de_enriquecimiento %}
+    <div class="valor fs-18">No aporta amenazas</div>
+    <div class="etiqueta">Para qué sirve</div>
+    <div class="nota">Es imprescindible, pero por otro motivo: completa las amenazas que ya
+      se recogieron con la puntuación oficial, la explotación activa confirmada o la
+      probabilidad de explotación. Por eso su recuento es cero y no es un fallo.</div>
+    {% else %}
+    <div class="valor">{{ amenazas | numero }}</div>
+    <div class="etiqueta">Amenazas aportadas</div>
+    <div class="nota">distintas, en todo el histórico</div>
+    {% endif %}
+  </div>
+  <div class="panel metrica">
+    <div class="valor fs-18">{{ fuente.tipo_es }}</div>
+    <div class="etiqueta">Tipo de fuente</div>
+    <div class="nota">tiempo máximo {{ fuente.timeout_s }} segundos</div>
+  </div>
+</div>
+
+{# ========================================= 2. cuánto y cómo evoluciona #}
+{# Concordancia: «la última comprobación» / «las últimas N comprobaciones»; sin
+   comprobaciones se habla de la ventana configurada. #}
+{% if serie.total == 1 %}
+  {% set ultimas = "la última comprobación" %}
+{% else %}
+  {% set ultimas = "las últimas " ~ (serie.total if serie.total else ventana) | numero ~ " comprobaciones" %}
+{% endif %}
+<div class="rejilla uno-dos">
+  <div class="panel" data-tour="3" data-tour-titulo="Tasa de éxito" data-tour-texto="Qué parte de las últimas comprobaciones respondió correctamente. Una fuente que falla a menudo deja de aportar avisos y conviene revisar su dirección o su clave.">
+    <div class="panel-cabecera">
+      <h2>Tasa de éxito</h2>
+      <span class="sub">{% if serie.total == 1 %}¿Respondió correctamente la última comprobación?{% else %}¿Qué parte de {{ ultimas }} respondió correctamente?{% endif %} Mismo criterio que la columna «Resultado» del historial.</span>
+    </div>
+    <div class="panel-cuerpo">
+      {{ graficos.barra_progreso(serie.exito, aria="Comprobaciones correctas y con fallo de " ~ ultimas) }}
+      <p class="pequeno suave mt-12">
+        {% if serie.total == 1 %}
+          La única comprobación registrada {{ 'fue correcta' if serie.correctas else 'falló' }}
+          ({{ graficos.fmt(serie.tasa | round(0) | int) }} %).
+          {% if serie.fallos %}Revise la URL o el tiempo máximo antes de darla por buena.{% endif %}
+        {% elif serie.total %}
+          {{ serie.correctas | numero }} de {{ serie.total | numero }} comprobaciones correctas
+          ({{ graficos.fmt(serie.tasa | round(0) | int) }} %).
+          {% if serie.fallos == 0 %}La fuente no ha fallado en la ventana.
+          {% elif serie.tasa < 60 %}La fuente falla más de lo que responde: revise la URL o el tiempo máximo.
+          {% else %}{{ serie.fallos | numero }} comprobaci{{ 'ón' if serie.fallos == 1 else 'ones' }} con fallo.{% endif %}
+        {% else %}
+          {# Al perfil «Solo lectura» no se le pide pulsar un botón que no tiene. #}
+          Sin comprobaciones registradas.{% if es_admin %} Pulse «Probar ahora» para verificar
+          la fuente.{% else %} La recolección diaria la comprueba por su cuenta.{% endif %}
+        {% endif %}
+      </p>
+      {% if serie.total %}
+      {# Agregados de la ventana que ya calcula la vista: acompañan a la barra
+         para que el panel no quede vacío y se lean junto a la tasa. #}
+      <dl class="detalle-lista mt-12">
+        <dt>Comprobaciones</dt>
+        <dd>{{ serie.total | numero }} · {{ serie.correctas | numero }} correcta{{ 's' if serie.correctas != 1 }} · {{ serie.fallos | numero }} con fallo</dd>
+        <dt>Latencia media</dt>
+        <dd>{% if serie.latencia_media is not none %}{{ graficos.fmt(serie.latencia_media) }} ms{% else %}<span class="tenue">sin respuesta</span>{% endif %}</dd>
+        <dt>Latencia máxima</dt>
+        <dd>{% if serie.latencia_maxima is not none %}{{ graficos.fmt(serie.latencia_maxima) }} ms{% else %}<span class="tenue">sin respuesta</span>{% endif %}</dd>
+        <dt>Entradas recibidas</dt>
+        <dd>{{ serie.entradas_total | numero }}</dd>
+        <dt>Entradas aceptadas</dt>
+        <dd>{% if de_enriquecimiento %}<span class="tenue">no aplica: esta fuente enriquece, no aporta entradas</span>
+          {%- else %}{{ serie.aceptadas_total | numero }}{% if serie.entradas_total %} <span class="tenue">({{ (serie.aceptadas_total * 100 / serie.entradas_total) | round | int }} % de las recibidas)</span>{% endif %}{% endif %}</dd>
+      </dl>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="panel" data-tour="4" data-tour-titulo="Latencia" data-tour-texto="Cuánto tarda en responder cada comprobación, en milisegundos, de la más antigua a la más reciente. Subidas bruscas anticipan fallos por tiempo de espera.">
+    <div class="panel-cabecera">
+      <h2>Latencia</h2>
+      <span class="sub">¿Cuánto tarda en responder? Milisegundos por comprobación, de la más antigua a la más reciente ({{ ultimas }}).</span>
+    </div>
+    <div class="panel-cuerpo">
+      {{ graficos.linea_tiempo(serie.etiquetas, serie.latencia, unidad="ms", alto=200,
+                               aria="Latencia en milisegundos de " ~ ultimas) }}
+      {% if serie.latencia_media is not none %}
+      <p class="pequeno suave mt-12">
+        Media {{ graficos.fmt(serie.latencia_media) }} ms · máxima {{ graficos.fmt(serie.latencia_maxima) }} ms
+        · tiempo máximo configurado {{ graficos.fmt(fuente.timeout_s * 1000) }} ms.
+      </p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="panel" data-tour="5" data-tour-titulo="Recibidas frente a aceptadas" data-tour-texto="Cuántas entradas devuelve la fuente y cuántas superan los filtros de fecha y de correlación con el inventario. Si casi ninguna se acepta, la fuente aporta poco a esta organización.">
+  <div class="panel-cabecera">
+    <h2>Entradas recibidas y aceptadas</h2>
+    <span class="sub">¿Aporta algo relevante? Entradas devueltas por la fuente frente a las que superaron los filtros de fecha y de correlación con el inventario, en {% if serie.total == 1 %}{{ ultimas }}{% else %}cada una de {{ ultimas }}{% endif %}.</span>
+  </div>
+  <div class="panel-cuerpo">
+    {# Panel a todo el ancho: mismo ancho de dibujo (1100) que el resto de gráficos
+       a todo el ancho, para que el texto de los ejes no se escale más que en «Latencia». #}
+    {{ graficos.linea_tiempo(serie.etiquetas, serie.entradas, ancho=1100, alto=220,
+                             aria="Entradas recibidas y aceptadas en " ~ ultimas) }}
+  </div>
+  <div class="panel-pie">
+    {% if serie.total %}
+      {{ serie.entradas_total | numero }} entradas recibidas y {{ serie.aceptadas_total | numero }} aceptadas en la ventana.
+    {% endif %}
+    {% if de_enriquecimiento %}
+    Esta fuente no devuelve entradas: enriquece las amenazas que otras fuentes ya han
+    recogido, así que sus cifras de entradas recibidas y aceptadas son cero por diseño.
+    {% else %}
+    Una fuente con muchas entradas y cero aceptadas funciona, pero no aporta nada relevante
+    para esta organización.
+    {% endif %}
+  </div>
+</div>
+
+{# ========================================= 3. configuración #}
+{% if es_admin %}
+<div class="panel" data-tour="6" data-tour-titulo="Configuración" data-tour-texto="Nombre, dirección, tipo, categoría, prioridad y tiempo máximo de espera de la fuente. Los cambios quedan en el registro de auditoría.">
+  <div class="panel-cabecera"><h2>Configuración</h2></div>
+  <div class="panel-cuerpo">
+    <form method="post" action="{{ url_for('fuentes.editar', source_id=fuente.id) }}"
+          data-accion-viva="pagina-fuente" data-accion-espera="Guardando…">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="campo-fila">
+        <div class="campo">
+          <label for="name">Nombre</label>
+          <input type="text" id="name" name="name" value="{{ fuente.name }}" required>
+        </div>
+        <div class="campo flex2">
+          <label for="url">URL</label>
+          <input type="url" id="url" name="url" value="{{ fuente.url }}" required>
+        </div>
+      </div>
+      <div class="campo-fila">
+        <div class="campo">
+          <label for="kind">Tipo</label>
+          <select id="kind" name="kind">
+            {% for t in tipos %}<option value="{{ t }}"{% if t==fuente.kind %} selected{% endif %}>{{ tipos_es.get(t, t) }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="campo">
+          <label for="category">Categoría</label>
+          <select id="category" name="category">
+            {% for c in categorias %}<option value="{{ c }}"{% if c==fuente.category %} selected{% endif %}>{{ categorias_es.get(c, c) }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="campo">
+          <label for="priority">Prioridad</label>
+          <select id="priority" name="priority">
+            {% for p in prioridades %}<option value="{{ p }}"{% if p==fuente.priority %} selected{% endif %}>{{ prioridades_es.get(p, p) }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="campo">
+          <label for="timeout_s">Tiempo máximo (segundos)</label>
+          <input type="number" id="timeout_s" name="timeout_s" value="{{ fuente.timeout_s }}" min="5" max="120">
+        </div>
+      </div>
+      <div class="campo">
+        <label for="notes">Notas</label>
+        <input type="text" id="notes" name="notes" value="{{ fuente.notes or '' }}">
+      </div>
+      <div class="casilla">
+        <input type="checkbox" id="enabled" name="enabled" value="1"{% if fuente.enabled %} checked{% endif %}>
+        <label for="enabled">Fuente activa</label>
+      </div>
+      <button class="btn primario" type="submit">Guardar cambios</button>
+      <span class="float-r">
+        <button class="btn peligro" type="submit"
+                formaction="{{ url_for('fuentes.borrar', source_id=fuente.id) }}"
+                data-confirm="¿Eliminar la fuente {{ fuente.name }}? Se perderá su historial de salud y la procedencia de {{ amenazas }} amenazas históricas que la citan (las amenazas se conservan). Si solo quiere dejar de consultarla, use Desactivar.">
+          Eliminar fuente
+        </button>
+      </span>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{# ================================================= 4. historial en tabla #}
+<div class="panel" data-tour="7" data-tour-titulo="Historial" data-tour-texto="Cada comprobación con su resultado, su duración y el error exacto cuando lo hubo. Es el primer sitio donde mirar cuando una fuente deja de responder.">
+  <div class="panel-cabecera">
+    <h2>Historial de comprobaciones</h2>
+    <span class="sub">{% if historial | length == 1 %}La única comprobación registrada.{% elif historial %}Las últimas {{ historial | length | numero }} comprobaciones, la más reciente primero.{% else %}Todavía no hay comprobaciones.{% endif %} Los gráficos superiores se dibujan con estos mismos datos.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    {% if historial %}
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead>
+          <tr><th>Fecha</th><th>Resultado</th><th class="num" title="Código de estado HTTP devuelto por el servidor">HTTP</th>
+              <th class="num">Entradas</th><th class="num">Aceptadas</th>
+              <th class="num">Latencia</th><th>Error</th></tr>
+        </thead>
+        <tbody>
+        {% for h in historial %}
+          <tr>
+            <td class="nowrap pequeno">{{ h.checked_at | fecha_corta }}</td>
+            <td class="nowrap">
+              <span class="insignia {% if h.ok %}ok{% else %}critical{% endif %}">
+                {{ 'Correcta' if h.ok else 'Fallo' }}
+              </span>
+            </td>
+            <td class="num">{{ h.http_status or '—' }}</td>
+            <td class="num">{{ h.entries | numero }}</td>
+            <td class="num">{{ h.accepted | numero }}</td>
+            <td class="num pequeno nowrap">{% if h.latency_ms is not none %}{{ h.latency_ms | numero }} ms{% else %}—{% endif %}</td>
+            <td class="pequeno mono txt-critico">{{ (h.error or '') | recortar(40) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="vacio">
+      <p>Sin comprobaciones registradas.</p>
+      <p class="pequeno">{% if es_admin %}Pulse «Probar ahora» para verificar la fuente.
+        {% else %}La recolección diaria la comprueba por su cuenta y el resultado aparecerá aquí.{% endif %}</p>
+    </div>
+    {% endif %}
+  </div>
+  <div class="panel-pie">
+    «Aceptadas» son las entradas que superaron los filtros de fecha y de correlación
+    con el inventario. Una fuente con muchas entradas y cero aceptadas funciona,
+    pero no aporta nada relevante para esta organización.
+  </div>
+</div>
+</div>{# fin de la zona viva #}
+{% endblock %}

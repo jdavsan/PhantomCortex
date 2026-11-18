@@ -1,0 +1,222 @@
+{#
+  Vista previa viva del generador de informes (2026-09-10). El usuario pidió «poder
+  previsualizarlo según vaya eligiendo opciones»: este trozo se vuelve a pedir al servidor
+  en cada cambio del formulario (motor de actualización parcial de webui/static/app.js) y
+  se sustituye solo él, sin recargar la pantalla y sin perder nada de lo escrito.
+
+  Dice, con la unidad escrita: cuántas AMENAZAS entran y cómo se reparten por
+  severidad, cuántos activos afectados sobre los presentes del alcance, cuántas tienen
+  explotación activa confirmada, cuántas actualizaciones pendientes trae la cola si se
+  pidió, cuántos apartados lleva el documento, el esquema con la numeración real y una
+  estimación de páginas, tamaño y tiempo de generación. Si la selección no da nada, lo
+  dice aquí mismo y el botón de generar queda deshabilitado con la razón escrita.
+
+  Sin JavaScript se pinta igual, con lo que haya en la dirección: el botón «Actualizar la
+  vista previa» del formulario recarga la página y esto se vuelve a calcular.
+#}
+<div id="vista-previa-informe" class="vista-previa-zona" data-zona-viva
+     data-zona-nombre="Vista previa del informe" tabindex="-1">
+  {# Lo que se lee (cifras, esquema, detalle y enlace) va dentro de «previa-desplazable»:
+     cuando el panel está pegado a la derecha (pantalla ancha) este bloque es el que se
+     desplaza dentro del panel, así que un esquema largo no empuja la página ni esconde el
+     botón de generar, que queda fijo al pie. En una sola columna es un div sin efecto
+     ninguno y todo se ve seguido, como antes. #}
+  <div class="previa-desplazable">
+  <div class="panel-cuerpo">
+    <p class="pequeno" data-zona-resumen>
+      <strong>{{ modo_es }}.</strong>
+      {#
+        AMENAZAS, no «vulnerabilidades» (2026-09-15, punto 3 de la revisión de claridad).
+        En el resto de la plataforma una vulnerabilidad es un CVE EN UN ACTIVO y una
+        amenaza es el aviso recolectado; esta pantalla llamaba «1.532 vulnerabilidades» a
+        las amenazas del periodo y dos tarjetas más abajo decía «1.323 con identificador
+        CVE, el resto son avisos o campañas sin CVE», que solo tiene sentido si son
+        amenazas.
+      #}
+      {% if previa %}
+        Entran {{ previa.amenazas | numero }}
+        {% if previa.amenazas == 1 %}amenaza{% else %}amenazas{% endif %}
+        y el documento llevará {{ sel.apartados | length | numero }}
+        {% if sel.apartados | length == 1 %}apartado{% else %}apartados{% endif %}.
+      {% else %}
+        Todavía no se pueden contar las amenazas: {{ razon_no_generar | lower }}
+      {% endif %}
+    </p>
+  </div>
+
+  {% if previa %}
+  <div class="panel-cuerpo borde-arriba">
+    <div class="rejilla c4">
+      <div class="panel metrica {{ 'critico' if previa.amenazas else 'neutro' }}">
+        <div class="valor">{{ previa.amenazas | numero }}</div>
+        <div class="etiqueta">{% if previa.amenazas == 1 %}Amenaza del periodo{% else %}Amenazas del periodo{% endif %}</div>
+        <div class="nota">{{ previa.criticas | numero }} {% if previa.criticas == 1 %}crítica{% else %}críticas{% endif %},
+          {{ previa.altas | numero }} {% if previa.altas == 1 %}alta{% else %}altas{% endif %} y
+          {{ previa.medias | numero }} {% if previa.medias == 1 %}media{% else %}medias{% endif %}</div>
+      </div>
+      <div class="panel metrica {{ 'alto' if previa.activos_afectados else 'neutro' }}">
+        <div class="valor">{{ previa.activos_afectados | numero }}</div>
+        {#
+          «Activos afectados» significaba tres cosas distintas: 652 en el Panel, en
+          Amenazas, en Activos y en Remediación; 580 aquí; 185 en Correcciones
+          pendientes. El alcance va en la propia etiqueta (punto 2 de la revisión).
+        #}
+        <div class="etiqueta">{% if previa.activos_afectados == 1 %}Activo afectado{% else %}Activos afectados{% endif %} por las amenazas de {{ periodo_es }}</div>
+        <div class="nota">de {{ previa.activos_ambito | numero }}
+          {% if previa.activos_ambito == 1 %}activo presente{% else %}activos presentes{% endif %} en este alcance
+          (servidores y equipos de cómputo con la versión vulnerable confirmada de alguna de esas amenazas).
+          No es la cifra de «Activos afectados» del Panel, que cuenta los de todas las amenazas vigentes, sea cual sea su fecha</div>
+      </div>
+      <div class="panel metrica {{ 'critico' if previa.en_kev else 'neutro' }}">
+        <div class="valor">{{ previa.en_kev | numero }}</div>
+        <div class="etiqueta">Con explotación activa</div>
+        <div class="nota">confirmada en el catálogo <abbr title="Known Exploited Vulnerabilities: catálogo de CISA de vulnerabilidades con explotación activa confirmada">KEV</abbr> de CISA</div>
+      </div>
+      {% if actualizaciones is not none %}
+      <div class="panel metrica {{ 'alto' if actualizaciones else 'exito' }}">
+        <div class="valor">{{ actualizaciones | numero }}</div>
+        <div class="etiqueta">{% if actualizaciones == 1 %}Actualización pendiente{% else %}Actualizaciones pendientes{% endif %}</div>
+        <div class="nota">en la cola de remediación de este alcance, con la versión a la que hay que
+          actualizar; es la situación de hoy, no la del periodo</div>
+      </div>
+      {% else %}
+      <div class="panel metrica neutro">
+        <div class="valor">{{ previa.con_cve | numero }}</div>
+        <div class="etiqueta">Amenazas con identificador CVE</div>
+        <div class="nota">de las {{ previa.amenazas | numero }} del periodo; el resto son avisos o campañas sin CVE asignado</div>
+      </div>
+      {% endif %}
+    </div>
+    {% if vacio %}
+      <div class="aviso error mt-12"><div><strong>Esa selección no devuelve nada.</strong>
+        No hay ninguna amenaza en ese periodo con ese alcance y esas severidades, ni
+        actualizaciones pendientes, así que el documento saldría vacío y no se genera. Amplíe el
+        periodo, cambie el alcance o marque más severidades.</div></div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {# ------------------------------------------------ esquema del documento #}
+  <div class="panel-cuerpo borde-arriba">
+    <h3>Esquema del documento</h3>
+    {% if esquema %}
+    <p class="ayuda">Los {{ esquema | length | numero }}
+      {% if esquema | length == 1 %}apartado que va a llevar{% else %}apartados que va a llevar{% endif %},
+      en su orden real y con la numeración del documento. Cambia al marcar y desmarcar
+      casillas.</p>
+    <ol class="lista-lineas esquema-informe">
+      {% for a in esquema %}
+      <li><strong>{% if a.numero %}{{ a.numero | numero }}. {% endif %}{{ a.titulo }}</strong>{% if a.pesado %}
+        <span class="insignia neutra">Tarda más</span>{% endif %}
+        {#- La descripción se repite tal cual al lado de cada casilla del formulario. En la
+            columna pegada de pantalla ancha, donde el formulario está a la vista a la
+            izquierda, estilo.css la oculta para que los doce apartados numerados quepan
+            enteros y se vea de un vistazo cómo se reordenan; en una sola columna (móvil,
+            pantalla estrecha o sin la columna pegada) se lee aquí. -#}
+        <span class="pequeno tenue descripcion-apartado">{{ a.descripcion }}</span></li>
+      {% endfor %}
+    </ol>
+    {% if sel.es_ejecutivo() %}
+    {# Informe ejecutivo mensual (2026-09-15): su estructura es fija y su tope de páginas
+       es una promesa que el documento cumple, no una estimación. Se dice aquí para que
+       quien lo genera sepa qué va a entregar a gerencia. #}
+    <p class="ayuda"><strong>Estructura fija.</strong> El informe ejecutivo lleva siempre
+      estos apartados y <strong>nunca pasa de diez páginas</strong>: no lleva fichas de
+      vulnerabilidad, ni anexo, ni nombres de paquete, ni versiones. Medido con los datos
+      de septiembre de 2026: cuatro páginas. El detalle técnico está en el informe mensual
+      completo.</p>
+    {% endif %}
+    {% if estimacion and estimacion.paginas %}
+    <p class="ayuda">Estimación: unas <strong>{{ estimacion.paginas | numero }}</strong>
+      {% if estimacion.paginas == 1 %}página{% else %}páginas{% endif %},
+      alrededor de {{ estimacion.kilobytes | numero }} kilobytes, y {{ estimacion.tiempo_es }}
+      en generarse
+      {%- if estimacion.fichas %}, con {{ estimacion.fichas | numero }}
+      {% if estimacion.fichas == 1 %}ficha detallada{% else %}fichas detalladas{% endif %}{% endif %}
+      {%- if estimacion.filas_anexo %} y {{ estimacion.filas_anexo | numero }} filas de anexo{% endif %}.
+      Es una aproximación calculada con los recuentos de arriba, no una medida exacta.</p>
+    {% endif %}
+    {# Los avisos de recorte (fichas, anexo, tiempo de generación) hablan de lo que va a
+       escribir el documento, así que se leen junto al esquema y no delante de las cifras:
+       así el esquema —lo que cambia al marcar y desmarcar— entra en la parte visible del
+       panel pegado sin tener que desplazarse dentro de él (2026-09-10). Los cuatro
+       avisos dependen de que haya algún apartado marcado (fichas, anexo, cola de
+       remediación o apartados pesados), así que ninguno se pierde por estar dentro de
+       esta rama. #}
+    {% for aviso in avisos_informe %}
+      <div class="aviso aviso-nivel mt-12"><div>{{ aviso }}</div></div>
+    {% endfor %}
+    {% else %}
+    <div class="vacio">
+      <p>Todavía no ha elegido ningún apartado, así que el documento estaría vacío.</p>
+      <p class="pequeno">Marque en «Apartados del documento» los que quiera que lleve: puede
+        empezar por la portada y el resumen ejecutivo, o armar cualquier otra combinación.
+        El esquema aparecerá aquí con su numeración real.</p>
+    </div>
+    {% endif %}
+  </div>
+
+  {# ------------------------------------------------- detalle de la selección #}
+  {# Va DESPUÉS de las cifras y del esquema (2026-09-10): cuando el panel está pegado a la
+     derecha, arriba tiene que estar lo que cambia mientras se elige (las cifras y el
+     esquema); esto es la confirmación escrita de lo que ya dice el formulario. #}
+  <div class="panel-cuerpo borde-arriba">
+    <h3>Detalle de la selección</h3>
+    <dl class="detalle-lista">
+      <dt>Título</dt><dd>{{ sel.titulo or 'Informe de ciberseguridad a medida' }}</dd>
+      <dt>Periodo</dt><dd>{{ periodo_es }}</dd>
+      <dt>Alcance</dt><dd>{{ alcance_es }}</dd>
+      <dt>Severidades</dt>
+      <dd>{% for s in sel.severidades %}{{ severidad_es_plural[s] }}{% if not loop.last %}, {% endif %}{% endfor %}
+        (la baja no se reporta)</dd>
+      <dt>Destinatario</dt><dd>{{ sel.destinatario or 'sin destinatario indicado' }}</dd>
+      <dt>Punto de partida</dt>
+      <dd>{% if modo == 'libre' %}Ninguno: se ha empezado de cero, sin plantilla.
+        {%- elif modo == 'derivado' %}La plantilla «{{ plantilla_actual.nombre }}», ya modificada:
+          lo que se va a generar es un informe personalizado.
+        {%- else %}La plantilla «{{ plantilla_actual.nombre }}», tal cual.{% endif %}</dd>
+    </dl>
+  </div>
+
+  {# ------------------------------------------------------------------ enlace #}
+  <div class="panel-cuerpo borde-arriba">
+    <div class="campo enlace-informe">
+      <label for="enlace-informe">Enlace de este informe</label>
+      <div class="enlace-informe-fila">
+        <input type="text" id="enlace-informe" value="{{ enlace_informe }}" readonly
+               aria-describedby="ayuda-enlace">
+        <button class="btn" type="button" data-copiar="enlace-informe" data-copiado-texto="Enlace copiado">Copiar el enlace de este informe</button>
+      </div>
+      {# El enlace se construye con el nombre público configurado (ajuste «webui_url»), no
+         con el servidor por el que haya entrado quien mira la pantalla: decía
+         «http://127.0.0.1:9090/…» y a la vez «páselo a un compañero», y esa dirección
+         solo funciona dentro del propio servidor (2026-09-15, punto 16). #}
+      <p class="ayuda" id="ayuda-enlace">Guarde este enlace para repetir el mismo informe otro día
+        o páselo a un compañero con permiso: la selección completa viaja en la dirección,
+        incluido el modo personalizado y los apartados que haya elegido. Está construido con
+        la dirección pública de la plataforma, así que funciona desde cualquier puesto de la
+        organización. Todavía no se pueden guardar plantillas propias en la plataforma.</p>
+    </div>
+  </div>
+  </div>{# fin de previa-desplazable #}
+
+  {# ------------------------------------------------------------ generar #}
+  {# Fuera del bloque que se desplaza: con el panel pegado a la derecha, el botón de
+     generar se queda siempre a la vista al pie del panel, con sus 44 px de alto. #}
+  <div class="panel-cuerpo borde-arriba previa-generar">
+    <form method="post" action="{{ url_for('informes.generar') }}" class="form-informe">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      {% for nombre, valor in campos_ocultos %}
+      <input type="hidden" name="{{ nombre }}" value="{{ valor }}">
+      {% endfor %}
+      {# El botón se queda deshabilitado con la razón escrita al lado en vez de
+         desaparecer: así se sabe por qué no se puede generar sin tener que pulsarlo. #}
+      <button class="btn primario" type="submit"
+              {% if not puede_generar %}disabled aria-describedby="razon-no-generar"{% endif %}>Generar y descargar en Word</button>
+    </form>
+    {% if not puede_generar %}
+    <p class="ayuda" id="razon-no-generar"><strong>No se puede generar todavía:</strong>
+      {{ razon_no_generar }}</p>
+    {% endif %}
+  </div>
+</div>

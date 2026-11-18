@@ -1,0 +1,447 @@
+{% extends "base.html" %}
+{% block titulo %}Tendencias{% endblock %}
+{% block contenido %}
+{# Zona viva (2026-09-10): esta pantalla se actualiza sin recargar. Las acciones
+   marcadas con `data-accion-viva` y los enlaces de esta misma dirección piden la
+   página al servidor y sustituyen solo este trozo, así que no se pierde el sitio
+   ni la posición de desplazamiento. Sin JavaScript todo funciona igual que antes,
+   con recarga. Contrato en docs/INTERACCION_SIN_RECARGA_2026-09-10.md. #}
+<div id="pagina-tendencias" data-zona-viva data-zona-nombre="Tendencias" tabindex="-1">
+{# Orden de lectura (seccion 6 de docs/DISENO_INTERFAZ_2026-09-03.md):
+   1) metricas del mes y selector, 2) serie mensual (grafico + tabla),
+   3) severidad / procedencia / CVSS medio, 4) tecnologias por veredicto,
+   5) CVE recurrentes, 6) glosario. Cada grafico sale de la misma consulta que
+   la tabla que lo acompana; los datos se preparan en vistas/amenazas.py. #}
+{% set criticidad_es = {'critical': 'Crítica', 'high': 'Alta', 'medium': 'Media', 'low': 'Baja'} %}
+{# Celda numérica con color semántico solo cuando hay algo que señalar: un cero
+   en rojo o en verde llama la atención sobre nada, así que se pinta tenue. #}
+{% macro celda_num(valor, clase) -%}
+<td class="num {{ clase if valor else 'tenue' }}">{{ (valor or 0) | numero }}</td>
+{%- endmacro %}
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Tendencias" data-tour-texto="Cómo evolucionan las amenazas mes a mes: cuántas llegan, con qué gravedad, qué tecnologías concentran el riesgo y qué CVE se repiten. El selector de mes, a la derecha, cambia el periodo que analizan los paneles «del mes».">
+  <div>
+    <h1>Tendencias</h1>
+    <p>Evolución histórica de las amenazas: volumen y gravedad por mes, madurez del dato,
+       tecnologías más afectadas y CVE que reaparecen. Estas comparaciones solo son posibles
+       desde que los datos están en base de datos.</p>
+  </div>
+  <div class="acciones-titulo">
+    <form method="get" class="filtros" data-filtro-vivo="pagina-tendencias">
+      <div class="campo">
+        <label for="selector-mes" class="oculto-visual">Mes seleccionado</label>
+        <select id="selector-mes" name="mes" data-autosubmit>
+          {% for m in meses %}
+            <option value="{{ m }}" {% if m==mes %}selected{% endif %}>{{ m | mes_es }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <noscript><button class="btn pequeno" type="submit">Ver</button></noscript>
+    </form>
+    {# Descarga del informe mensual (2026-09-08): el módulo de informes lo genera en memoria
+       y lo devuelve como .docx sin enviar correo. url_informe solo llega con permiso
+       (administrador u operador SOC) y con el módulo registrado; POST con CSRF porque
+       generar el documento cuesta segundos y queda en la auditoría. #}
+    {% if url_informe %}
+    <form method="post" action="{{ url_informe }}" class="form-informe">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn primario" type="submit" title="Genera y descarga informe_amenazas_{{ mes }}.docx">Descargar el informe de {{ mes | mes_es }}</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{# ------------------------------------------------------- 1. metricas del mes #}
+{% if stats %}
+<div class="rejilla c4 mb-18" data-tour="2" data-tour-titulo="Cifras del mes" data-tour-texto="Total de amenazas del periodo, cuántas son críticas, la gravedad técnica media según la puntuación CVSS oficial y cuántas están en el catálogo KEV de explotación activa de CISA.">
+  <div class="panel metrica">
+    <div class="valor">{{ stats.total | numero }}</div>
+    <div class="etiqueta">Amenazas del periodo</div>
+    <div class="nota">{{ mes | mes_es }}</div>
+  </div>
+  <div class="panel metrica critico">
+    <div class="valor">{{ stats.criticas | numero }}</div>
+    <div class="etiqueta">Amenazas críticas</div>
+    <div class="nota">{{ graficos.fmt(stats.pct_criticas, 1) }} % de las del periodo</div>
+  </div>
+  <div class="panel metrica">
+    <div class="valor">{{ graficos.fmt(stats.cvss_medio, 1) }}</div>
+    <div class="etiqueta"><abbr title="Common Vulnerability Scoring System: puntuación oficial de gravedad técnica, de 0 a 10">CVSS</abbr> medio real</div>
+    <div class="nota">máximo {{ graficos.fmt(stats.cvss_max, 1) }} · {{ stats.sev_nvd | numero }} con puntuación oficial</div>
+  </div>
+  <div class="panel metrica {% if stats.en_kev %}critico{% else %}neutro{% endif %}">
+    <div class="valor">{{ stats.en_kev | numero }}</div>
+    <div class="etiqueta">Amenazas en CISA <abbr title="Known Exploited Vulnerabilities: catálogo de CISA de vulnerabilidades con explotación activa confirmada">KEV</abbr></div>
+    <div class="nota">explotación activa confirmada</div>
+  </div>
+</div>
+{% endif %}
+
+{# ------------------------------------------------------- 2. serie mensual #}
+<div class="panel" data-tour="3" data-tour-titulo="Serie mensual" data-tour-texto="Barras apiladas por severidad de hasta veinticuatro meses; la línea marca las amenazas con explotación activa confirmada. Debajo, la misma serie en tabla, mes por mes, para leer las cifras exactas.">
+  <div class="panel-cabecera">
+    <h2>Serie mensual</h2>
+    <span class="sub">¿Cuántas amenazas se registran cada mes y con qué gravedad? Barras apiladas por
+      severidad de hasta 24 meses; la línea marca las incluidas en el catálogo
+      <abbr title="Known Exploited Vulnerabilities: catálogo de CISA de vulnerabilidades con explotación activa confirmada">KEV</abbr>
+      de explotación activa.</span>
+  </div>
+  <div class="panel-cuerpo">
+    {{ graficos.barras_apiladas(serie_categorias, serie_severidad, linea=linea_kev, ancho=1100, alto=260) }}
+  </div>
+  {% if evolucion %}
+  <div class="panel-cuerpo sin-relleno">
+    <div class="tabla-envoltorio">
+      <table>
+        <thead>
+          <tr><th>Periodo</th><th class="num">Total</th><th class="num">Críticas</th>
+              <th class="num">Altas</th><th class="num">Medias</th>{% if not sin_bajas %}<th class="num">Bajas</th>{% endif %}
+              <th class="num" title="Known Exploited Vulnerabilities: catálogo de CISA de vulnerabilidades con explotación activa confirmada">KEV</th>
+              <th class="num" title="Media de las puntuaciones CVSS reales del mes (sin severidades estimadas)">CVSS medio</th>
+              <th class="w-220">Distribución</th></tr>
+        </thead>
+        <tbody>
+        {% for e in evolucion %}
+          {% set tot = e.total or 1 %}
+          <tr>
+            <td class="nowrap"><a href="{{ url_for('amenazas.lista', mes=e.month) }}">{{ e.month | mes_es }}</a></td>
+            <td class="num">{{ e.total | numero }}</td>
+            {{ celda_num(e.criticas, 'txt-critico') }}
+            {{ celda_num(e.altas, 'txt-alto') }}
+            {{ celda_num(e.medias, 'txt-medio') }}
+            {% if not sin_bajas %}{{ celda_num(e.bajas, 'txt-bajo') }}{% endif %}
+            <td class="num">{{ e.en_kev | numero }}</td>
+            <td class="num">{{ graficos.fmt(e.cvss_medio, 1) }}</td>
+            <td>
+              <div class="barra" title="Críticas {{ e.criticas | numero }} · Altas {{ e.altas | numero }} · Medias {{ e.medias | numero }}{% if not sin_bajas %} · Bajas {{ e.bajas | numero }}{% endif %}">
+                <span class="critico ancho-{{ (((e.criticas or 0) * 100 // tot) // 5) * 5 }}"></span>
+                <span class="alto ancho-{{ (((e.altas or 0) * 100 // tot) // 5) * 5 }}"></span>
+                <span class="medio ancho-{{ (((e.medias or 0) * 100 // tot) // 5) * 5 }}"></span>
+                {% if not sin_bajas %}<span class="bajo ancho-{{ (((e.bajas or 0) * 100 // tot) // 5) * 5 }}"></span>{% endif %}
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td class="nowrap">Total de {{ evolucion | length }} {% if evolucion | length == 1 %}periodo{% else %}periodos{% endif %}</td>
+            <td class="num">{{ evolucion | sum(attribute='total') | numero }}</td>
+            {{ celda_num(evolucion | sum(attribute='criticas'), 'txt-critico') }}
+            {{ celda_num(evolucion | sum(attribute='altas'), 'txt-alto') }}
+            {{ celda_num(evolucion | sum(attribute='medias'), 'txt-medio') }}
+            {% if not sin_bajas %}{{ celda_num(evolucion | sum(attribute='bajas'), 'txt-bajo') }}{% endif %}
+            <td class="num">{{ evolucion | sum(attribute='en_kev') | numero }}</td>
+            <td class="num">—</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="panel-pie">Todavía no hay amenazas registradas: la serie se irá llenando con cada ejecución.</div>
+  {% endif %}
+</div>
+
+{# ------------------------------------------- 2b. serie anual (2026-09-08) #}
+{# El usuario pidió «un apartado para poder ver una serie anual de vulnerabilidades».
+   Arriba, una barra por año (queries.serie_anual); debajo, los doce meses del año
+   elegido, que salen de la misma consulta que la serie mensual (evolucion_mensual),
+   así que el total del año es la suma exacta de sus meses. Tres severidades por la
+   regla interna (bajas no reportadas) y toda cifra con su unidad. #}
+<div class="panel" data-tour="4" data-tour-titulo="Serie anual de amenazas" data-tour-texto="Cuántas amenazas se registraron cada año y con qué gravedad: una barra por año apilada en críticas, altas y medias, con los meses con datos escritos junto al total. Debajo, los doce meses del año que elija en el selector, con las mismas tres severidades, para comparar un año con otro mes a mes.">
+  <div class="panel-cabecera">
+    <h2>Serie anual de amenazas</h2>
+    {% if anios | length > 1 %}
+    <form method="get" class="filtros" data-filtro-vivo="pagina-tendencias">
+      {% if mes %}<input type="hidden" name="mes" value="{{ mes }}">{% endif %}
+      <div class="campo">
+        <label for="selector-anio">Año del detalle mensual</label>
+        <select id="selector-anio" name="anio" data-autosubmit>
+          {% for a in anios %}
+            <option value="{{ a }}" {% if a==anio %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <noscript><button class="btn pequeno" type="submit">Ver</button></noscript>
+    </form>
+    {% endif %}
+    <span class="sub">¿Cuántas amenazas se registran cada año y con qué gravedad? Una barra por año, apilada en
+      críticas, altas y medias{% if not sin_bajas %} y bajas{% endif %}; junto al total, cuántos meses del año tienen
+      datos, porque un año con tres meses no se compara a ciegas con uno de doce. Debajo, los doce meses
+      {% if anio %}de {{ anio }}{% else %}del año elegido{% endif %} con las mismas severidades.</span>
+  </div>
+  {% if anual %}
+  <div class="panel-cuerpo">
+    {{ graficos.barras_horizontales(anual_items, ancho=1100, alto_fila=30, max_etiqueta=6, unidad=('amenaza', 'amenazas'),
+                                    nombres=nombres_severidad,
+                                    aria='Amenazas registradas por año, apiladas por severidad, con los meses con datos de cada año') }}
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead>
+          <tr><th>Año</th><th class="num">Meses con datos</th><th class="num">Total de amenazas</th>
+              <th class="num" title="Amenazas de severidad crítica">Críticas</th><th class="num" title="Amenazas de severidad alta">Altas</th><th class="num" title="Amenazas de severidad media">Medias</th>{% if not sin_bajas %}<th class="num">Bajas</th>{% endif %}
+              <th class="num" title="Known Exploited Vulnerabilities: catálogo de CISA de vulnerabilidades con explotación activa confirmada">KEV</th></tr>
+        </thead>
+        <tbody>
+        {% for a in anual %}
+          <tr>
+            <td class="nowrap"><a href="{{ url_for('amenazas.tendencias', anio=a.anio, mes=mes) }}" title="Ver los doce meses de {{ a.anio }}">{{ a.anio }}</a></td>
+            <td class="num">{{ a.meses | numero }} {% if a.meses == 1 %}mes{% else %}meses{% endif %}</td>
+            <td class="num">{{ a.total | numero }} {% if a.total == 1 %}amenaza{% else %}amenazas{% endif %}</td>
+            {{ celda_num(a.criticas, 'txt-critico') }}
+            {{ celda_num(a.altas, 'txt-alto') }}
+            {{ celda_num(a.medias, 'txt-medio') }}
+            {% if not sin_bajas %}{{ celda_num(a.bajas, 'txt-bajo') }}{% endif %}
+            <td class="num">{{ a.en_kev | numero }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="panel-cabecera serie-anual-detalle">
+    <h3>Los doce meses de {{ anio }}</h3>
+    <span class="sub">Amenazas de cada mes de {{ anio }} por severidad, de enero a diciembre. Un mes sin amenazas
+      registradas se muestra a cero y la tabla lo indica; el total del año es la suma exacta de estos doce meses.</span>
+  </div>
+  <div class="panel-cuerpo">
+    {{ graficos.barras_apiladas(anio_categorias, anio_series, ancho=1100, alto=240, categorico=True,
+                                aria='Amenazas de cada mes de ' ~ anio ~ ' apiladas por severidad') }}
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta tabla-meses-anio">
+        <thead>
+          <tr><th>Mes</th><th class="num">Total de amenazas</th><th class="num" title="Amenazas de severidad crítica">Críticas</th>
+              <th class="num" title="Amenazas de severidad alta">Altas</th><th class="num" title="Amenazas de severidad media">Medias</th>{% if not sin_bajas %}<th class="num">Bajas</th>{% endif %}
+              <th class="num" title="Known Exploited Vulnerabilities: catálogo de CISA de vulnerabilidades con explotación activa confirmada">KEV</th></tr>
+        </thead>
+        <tbody>
+        {% for m in meses_anio %}
+          <tr>
+            <td class="nowrap">
+              {% if m.con_datos %}<a href="{{ url_for('amenazas.lista', mes=m.month) }}">{{ m.month | mes_es }}</a>
+              {% else %}<span class="tenue">{{ m.month | mes_es }}</span> <span class="pequeno tenue">{% if m.futuro %}(mes aún no iniciado){% else %}(sin amenazas registradas){% endif %}</span>{% endif %}
+            </td>
+            <td class="num {{ '' if m.total else 'tenue' }}">{{ m.total | numero }}</td>
+            {{ celda_num(m.criticas, 'txt-critico') }}
+            {{ celda_num(m.altas, 'txt-alto') }}
+            {{ celda_num(m.medias, 'txt-medio') }}
+            {% if not sin_bajas %}{{ celda_num(m.bajas, 'txt-bajo') }}{% endif %}
+            <td class="num {{ '' if m.en_kev else 'tenue' }}">{{ m.en_kev | numero }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td class="nowrap">Total de {{ anio }}</td>
+            <td class="num">{{ meses_anio | sum(attribute='total') | numero }} amenazas</td>
+            {{ celda_num(meses_anio | sum(attribute='criticas'), 'txt-critico') }}
+            {{ celda_num(meses_anio | sum(attribute='altas'), 'txt-alto') }}
+            {{ celda_num(meses_anio | sum(attribute='medias'), 'txt-medio') }}
+            {% if not sin_bajas %}{{ celda_num(meses_anio | sum(attribute='bajas'), 'txt-bajo') }}{% endif %}
+            <td class="num">{{ meses_anio | sum(attribute='en_kev') | numero }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="panel-cuerpo sin-relleno"><div class="vacio"><p>Todavía no hay amenazas registradas: la serie anual se irá llenando con cada ejecución.</p></div></div>
+  {% endif %}
+</div>
+
+{# --------------------------------- 3. severidad / procedencia / CVSS medio #}
+<div class="rejilla c3">
+  <div class="panel" data-tour="5" data-tour-titulo="Severidad del mes" data-tour-texto="Reparto de las amenazas del mes elegido entre críticas, altas y medias{% if not sin_bajas %}, más las bajas mientras el ajuste «Ignorar la severidad baja» esté desactivado{% endif %}. Coincide con las cifras de arriba.">
+    <div class="panel-cabecera">
+      <h2>Severidad del mes</h2>
+      <span class="sub">¿Cómo se reparte la gravedad en {{ mes | mes_es if mes else 'el periodo' }}? Las cifras coinciden con las métricas superiores.</span>
+    </div>
+    <div class="panel-cuerpo">
+      {{ graficos.dona(dona_severidad, centro_valor=stats.total if stats else None, centro_etiqueta='amenazas', tamano=200, grosor=26) }}
+    </div>
+  </div>
+
+  <div class="panel" data-tour="6" data-tour-titulo="De dónde sale la gravedad" data-tour-texto="Qué parte de cada mes tiene puntuación CVSS oficial de la base de datos NVD y qué parte es una estimación propia mientras llega la oficial. Cuanta más puntuación oficial, más fiable es la gravedad mostrada.">
+    <div class="panel-cabecera">
+      <h2>Procedencia de la severidad</h2>
+      <span class="sub">¿Qué parte de cada mes tiene <abbr title="Common Vulnerability Scoring System: puntuación oficial de gravedad técnica, de 0 a 10">CVSS</abbr> oficial de NVD y qué parte es estimada? Cuanto más verde, más maduro es el dato.</span>
+    </div>
+    {% if procedencia %}
+    <div class="panel-cuerpo sin-relleno">
+      <div class="tabla-envoltorio">
+        <table class="tabla-compacta">
+          <thead>
+            <tr><th>Periodo</th><th>Oficial frente a estimada</th>
+                <th class="num" title="Porcentaje de amenazas del mes cuya severidad procede del CVSS oficial publicado por NVD">Oficial</th></tr>
+          </thead>
+          <tbody>
+          {% for p in procedencia %}
+            <tr>
+              <td class="nowrap">{{ p.month | mes_es }}</td>
+              <td>{{ graficos.barra_progreso(p.partes, leyenda=False, aria=p.aria) }}</td>
+              <td class="num nowrap">{{ graficos.fmt(p.pct_oficial, 1) }} %</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel-pie">
+      <ul class="leyenda">
+        <li><span class="leyenda-punto serie-exito"></span>Oficial: CVSS publicado por NVD</li>
+        <li><span class="leyenda-punto serie-neutro"></span>Estimada: calculada por el sistema (vector, KEV o heurística)</li>
+      </ul>
+    </div>
+    {% else %}
+    <div class="panel-cuerpo sin-relleno"><div class="vacio"><p>Sin datos suficientes.</p></div></div>
+    {% endif %}
+  </div>
+
+  <div class="panel" data-tour="7" data-tour-titulo="Gravedad técnica media" data-tour-texto="Media mensual de las puntuaciones CVSS reales, de 0 a 10. Sirve para ver si las amenazas que llegan son cada vez más graves o menos.">
+    <div class="panel-cabecera">
+      <h2><abbr title="Common Vulnerability Scoring System: puntuación oficial de gravedad técnica, de 0 a 10">CVSS</abbr> medio mensual</h2>
+      <span class="sub">¿Sube o baja la gravedad técnica media? Media de las puntuaciones CVSS reales de cada mes, sin contar las severidades estimadas.</span>
+    </div>
+    <div class="panel-cuerpo">
+      {# cvss_opciones trae tope=10 (el CVSS va de 0 a 10) en cuanto
+         graficos.linea_tiempo lo admita; hasta entonces es {} y la escala es automática. #}
+      {{ graficos.linea_tiempo(cvss_etiquetas, cvss_series, ancho=380, alto=200, **cvss_opciones) }}
+    </div>
+  </div>
+</div>
+
+{# ------------------------------------------- 4. tecnologias / 5. CVE recurrentes #}
+<div class="rejilla c2">
+  <div class="panel" data-tour="8" data-tour-titulo="Tecnologías más afectadas" data-tour-texto="Qué tecnologías del inventario concentran las amenazas del periodo, apiladas por severidad con los mismos colores de toda la plataforma. Junto a cada barra, cuántas están confirmadas por la versión instalada; la tabla añade el veredicto completo. Pulse un nombre para ver sus amenazas.">
+    <div class="panel-cabecera">
+      <h2>Tecnologías más afectadas</h2>
+      <span class="sub">¿Qué tecnologías del inventario concentran las amenazas de {{ mes | mes_es if mes else 'este periodo' }}?
+        Ordenadas de más a menos amenazas y apiladas por severidad; junto a cada barra, cuántas están confirmadas
+        por la versión instalada y «sin versión» cuando falta en el inventario. La tabla añade la criticidad, el
+        veredicto de versión y el detalle de cada una. Pulse un nombre para ver sus amenazas.</span>
+    </div>
+    {% if top %}
+    <div class="panel-cuerpo">
+      {#
+        Por qué la leyenda no coincide con la tarjeta de arriba (2026-09-15). La leyenda
+        suma SOLO las barras dibujadas y las suma CON REPETICIÓN, así que decía «Críticas
+        168, Altas 938, Medias 699» mientras la tarjeta de esta misma página decía 118,
+        834 y 571, y nadie explicaba la diferencia. El modelo es correcto (una amenaza
+        que menciona dos tecnologías afecta a las dos): lo que faltaba era decirlo donde
+        se lee. `leyenda_nota` lo escribe bajo la leyenda y el párrafo de debajo repite
+        la explicación completa que el Panel ya tenía.
+      #}
+      {{ graficos.barras_horizontales(tec_items, ancho=600, alto_fila=26, max_etiqueta=28, unidad=('amenaza', 'amenazas'),
+                                      nombres={"critico": "Críticas", "alto": "Altas", "medio": "Medias", "bajo": "Bajas"},
+                                      leyenda_nota=('Suma de las ' ~ (tec_items | length | numero) ~ ' barras dibujadas, con repetición: una amenaza que menciona dos tecnologías cuenta en las dos. No es el total del periodo' ~ (', que son ' ~ (stats.total | numero) ~ ' amenazas' if stats else '') ~ '.'),
+                                      aria='Las tecnologías con más amenazas del periodo, apiladas por severidad') }}
+      <p class="pequeno suave mt-12">Estas barras <strong>no suman</strong> las
+        {{ stats.total | numero if stats else '—' }} amenazas de la tarjeta «Amenazas del periodo»,
+        y no deben sumarlas: son las <strong>{{ tec_items | length | numero }} tecnologías con más
+        amenazas</strong> del periodo, no todas; una amenaza que menciona dos tecnologías cuenta en
+        las dos barras; y una amenaza que no menciona ninguna tecnología del inventario no está en
+        ninguna barra. Para ver el total sin repeticiones, use la tarjeta de arriba o la
+        <a href="{{ url_for('amenazas.lista', mes=mes) }}">lista de amenazas</a>.</p>
+    </div>
+    <div class="panel-cuerpo sin-relleno">
+      <div class="tabla-envoltorio">
+        <table class="tabla-compacta">
+          <thead><tr><th>Tecnología</th>
+                     <th title="Criticidad de la tecnología para el negocio, según el inventario">Criticidad</th>
+                     <th>Versión</th><th class="num">Total</th>
+                     <th class="num">Críticas</th>
+                     {#
+                       «Confirmadas» a secas chocaba con «Amenazas confirmadas en algún activo» de
+                       la página de Amenazas: aquí se compara la versión REGISTRADA DE LA
+                       TECNOLOGÍA en el inventario y allí la versión instalada en cada activo
+                       real. Microsoft Windows salía con 0 en esta columna y con 1.545 allí
+                       (auditoría de tableros del 2026-09-15). El rótulo lo dice ahora entero.
+                     #}
+                     <th class="num" title="Amenazas en las que la versión registrada de la tecnología resulta vulnerable según el aviso">Confirmadas por versión de la tecnología</th>
+                     <th class="num" title="Falta la versión en el inventario o el aviso no la precisa">Sin determinar</th>
+                     <th class="num" title="Versión instalada NO vulnerable según el aviso: ruido que el inventario evita">Descartadas</th></tr></thead>
+          <tbody>
+          {% for t in top %}
+            <tr>
+              <td class="nowrap"><a href="{{ url_for('amenazas.lista', tec=t.slug, mes=mes) }}">{{ t.name }}</a></td>
+              <td class="nowrap"><span class="insignia {{ t.criticality }}">{{ criticidad_es.get(t.criticality, t.criticality) }}</span></td>
+              <td class="mono pequeno">{{ t.version_installed or '—' }}</td>
+              <td class="num">{{ t.amenazas | numero }}</td>
+              {{ celda_num(t.criticas, 'txt-critico') }}
+              {{ celda_num(t.confirmadas, 'txt-critico') }}
+              <td class="num">{{ t.sin_determinar | default(0) | numero }}</td>
+              {{ celda_num(t.no_aplicables, 'txt-exito') }}
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel-pie">
+      En la tabla, «Confirmadas por versión de la tecnología» son amenazas cuya versión registrada
+      <strong>de la tecnología</strong> es vulnerable según el aviso; «Descartadas», aquellas en que
+      NO lo es: ruido que el sistema elimina gracias al inventario de versiones. «Sin versión» señala
+      tecnologías a las que falta la versión en el inventario, por lo que nada puede confirmarse ni descartarse.
+      <strong>No es lo mismo que «Amenazas confirmadas en algún activo»</strong> de la
+      <a href="{{ url_for('amenazas.lista', mes=mes) }}">página de Amenazas</a>: aquella compara el
+      aviso con la versión instalada en cada uno de los activos reales de OCS Inventory, una por una,
+      así que una tecnología puede salir aquí sin ninguna confirmación por versión (por ejemplo,
+      porque el inventario tecnológico guarda una sola versión de referencia) y tener allí miles de
+      amenazas confirmadas en activos concretos.
+    </div>
+    {% else %}
+    <div class="panel-cuerpo sin-relleno"><div class="vacio"><p>Sin datos para este periodo.</p></div></div>
+    {% endif %}
+  </div>
+
+  <div class="panel" data-tour="9" data-tour-titulo="CVE recurrentes" data-tour-texto="Vulnerabilidades que reaparecen en varios meses, cada barra con el color de su severidad y marcadas las de explotación activa. Si un CVE vuelve una y otra vez, conviene comprobar que la corrección se aplicó de verdad en todos los activos.">
+    <div class="panel-cabecera">
+      <h2>CVE recurrentes</h2>
+      <span class="sub">¿Qué CVE reaparecen mes tras mes? Meses con presencia de los diez CVE más
+        recurrentes; cada barra lleva el color de la severidad del CVE (rojo crítica, naranja alta, ocre media,
+        azul baja), escrita junto al total, y marca los de explotación activa. Debajo, la lista completa de los
+        presentes en más de un periodo.</span>
+    </div>
+    {% if recurrentes %}
+    <div class="panel-cuerpo">
+      {{ graficos.barras_horizontales(cve_items, ancho=600, alto_fila=22, max_etiqueta=20, leyenda=False,
+                                      aria='Meses en los que aparece cada uno de los diez CVE más recurrentes, con su severidad') }}
+    </div>
+    <div class="panel-cuerpo sin-relleno">
+      <div class="tabla-envoltorio">
+        <table class="tabla-compacta">
+          <thead><tr><th>CVE</th><th>Severidad</th><th class="num" title="Meses distintos en los que se ha registrado el CVE">Periodos</th>
+                     <th class="num" title="Veces que los avisos recolectados han citado este identificador; no son activos afectados ni periodos">Veces citado en avisos</th><th>Desde</th></tr></thead>
+          <tbody>
+          {% for r in recurrentes %}
+            <tr>
+              <td><a class="mono" href="{{ url_for('amenazas.lista', q=r.cve) }}">{{ r.cve }}</a></td>
+              <td class="nowrap">{% if r.severidad %}<span class="insignia {{ r.severidad | lower }}">{{ r.severidad | severidad_es }}</span>{% else %}<span class="tenue">—</span>{% endif %}
+                {% if r.en_kev %}<span class="insignia kev" title="Explotación activa confirmada por CISA">KEV</span>{% endif %}</td>
+              <td class="num"><strong>{{ r.meses | numero }}</strong></td>
+              <td class="num">{{ r.veces | numero }}</td>
+              <td class="nowrap pequeno tenue">{{ r.primera_vez | fecha_es }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel-pie">
+      Un CVE que reaparece cada mes suele indicar que sigue sin parchear.
+    </div>
+    {% else %}
+    <div class="panel-cuerpo sin-relleno"><div class="vacio"><p>Sin CVE recurrentes.</p></div></div>
+    {% endif %}
+  </div>
+</div>
+
+{# ------------------------------------------------------------ 6. glosario #}
+{% include "_glosario.html" %}
+</div>{# fin de la zona viva #}
+{% endblock %}

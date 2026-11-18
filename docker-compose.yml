@@ -1,49 +1,64 @@
 version: '3.8'
 
 services:
-  phantomcortex:
+  # Servidor web - Inteligencia de Amenazas
+  web:
     build:
       context: .
       dockerfile: Dockerfile
-    image: phantomcortex:latest
-    container_name: phantomcortex
-    
+    container_name: inteligencia-amenazas-web
+    ports:
+      - "9090:9090"
     environment:
-      # Email configuration (use secrets in production)
-      - PHANTOMCORTEX_EMAIL_PASSWORD=${EMAIL_PASSWORD}
-      - TZ=UTC
-    
+      LOG_LEVEL: INFO
+      FLASK_ENV: production
     volumes:
-      # Persistent data
+      # Base de datos
       - ./data:/app/data
+      # Logs
       - ./logs:/app/logs
-      - ./reports:/app/reports
-      - ./backups:/app/backups
-      
-      # Configuration (read-only)
-      - ./config:/app/config:ro
-    
-    # Run daily collection
-    command: ["sh", "-c", "while true; do python core/collector.py && sleep 86400; done"]
-    
-    restart: unless-stopped
-    
+      # Configuración
+      - ./config:/app/config
+      # Credentials
+      - ./config/credentials.env:/app/config/credentials.env:ro
+    depends_on:
+      - db
     networks:
-      - phantomcortex-net
-    
+      - amenazas-network
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
-      interval: 5m
+      test: ["CMD", "curl", "-f", "http://localhost:9090/"]
+      interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 10s
+
+  # Base de datos MariaDB (opcional, para OCS Inventory)
+  # Descomenta si necesitas conectar con OCS Inventory vía MariaDB
+  # db:
+  #   image: mariadb:11-alpine
+  #   container_name: inteligencia-amenazas-db
+  #   environment:
+  #     MYSQL_ROOT_PASSWORD: rootpassword
+  #     MYSQL_DATABASE: threat_intel
+  #     MYSQL_USER: appuser
+  #     MYSQL_PASSWORD: apppassword
+  #   volumes:
+  #     - db-data:/var/lib/mysql
+  #   networks:
+  #     - amenazas-network
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
 
 networks:
-  phantomcortex-net:
+  amenazas-network:
     driver: bridge
 
 volumes:
-  data:
-  logs:
-  reports:
-  backups:
+  # Descomenta si usas el servicio de DB
+  # db-data:
+  #   driver: local

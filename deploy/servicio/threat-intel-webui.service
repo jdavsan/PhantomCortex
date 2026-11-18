@@ -1,0 +1,30 @@
+[Unit]
+StartLimitIntervalSec=0
+Description=Interfaz de administracion - Inteligencia de Amenazas
+Documentation=file:/opt/inteligencia_amenazas/docs/AUDITORIA_2026-09-02.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=si
+Group=si
+WorkingDirectory=/opt/inteligencia_amenazas
+Environment=PYTHONUNBUFFERED=1
+Environment=LOG_LEVEL=INFO
+ExecStart=/opt/inteligencia_amenazas/.venv/bin/python -m webui.app
+Restart=always
+RestartSec=5
+
+# Endurecimiento: el servicio gestiona credenciales, conviene limitarlo
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/inteligencia_amenazas
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target

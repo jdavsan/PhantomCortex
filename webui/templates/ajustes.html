@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block titulo %}Ajustes{% endblock %}
+{% block contenido %}
+{# Zona viva (2026-09-10): esta pantalla se actualiza sin recargar. Las acciones
+   marcadas con `data-accion-viva` y los enlaces de esta misma dirección piden la
+   página al servidor y sustituyen solo este trozo, así que no se pierde el sitio
+   ni la posición de desplazamiento. Sin JavaScript todo funciona igual que antes,
+   con recarga. Contrato en docs/INTERACCION_SIN_RECARGA_2026-09-10.md. #}
+<div id="pagina-ajustes" data-zona-viva data-zona-nombre="Ajustes de la plataforma" tabindex="-1">
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Ajustes del sistema" data-tour-texto="Cada ajuste tiene efecto real y una explicación de lo que cambia. Agrupados por alertas, resumen semanal, informe, recolección, activos, enriquecimiento y traducción.">
+  <div>
+    <h1>Ajustes del sistema</h1>
+    {# Revisión de claridad del 2026-09-15: la cabecera hablaba del «sistema anterior» y
+       de «46 variables que ningún script consultaba». Quien abre esta pantalla necesita
+       saber qué puede cambiar y qué pasa al hacerlo. #}
+    <p>Aquí se decide qué se alerta, cuándo y a quién, cómo se lee el inventario y qué
+       entra en los informes. Cada ajuste tiene efecto real y su nombre es el que aparece
+       en las demás pantallas, en los correos y en los informes; debajo de cada uno se
+       explica qué cambia y cuál es el valor recomendado. Los cambios se aplican en la
+       siguiente ejecución y quedan registrados en Auditoría con el valor anterior y el
+       nuevo.</p>
+  </div>
+  <div class="acciones-titulo">
+    <form method="post" action="{{ url_for('ajustes.restaurar') }}"
+          data-confirm="¿Restaurar todos los ajustes a sus valores por defecto?"
+          data-accion-viva="pagina-ajustes" data-accion-espera="Restaurando…">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn" type="submit">Restaurar valores por defecto</button>
+    </form>
+  </div>
+</div>
+
+<div class="panel" id="logo">
+  <div class="panel-cabecera"><h2>Logo de la organización</h2></div>
+  <div class="panel-cuerpo">
+    <p class="ayuda">Aparece en la cabecera de la interfaz para todos los perfiles y en la
+      portada y el encabezado de los informes en Word que se generan a partir de ahora
+      (los ya descargados no cambian). Formatos admitidos: PNG, JPEG o WEBP, hasta 5 MB;
+      se recorta a un cuadrado de hasta 1000×1000 píxeles y se guarda como PNG.</p>
+    {% if logo_actual %}
+      <p>
+        <img src="{{ url_for('ajustes.logo') }}" alt="Logo actual de la organización"
+             class="logo-vista-previa">
+      </p>
+      <p class="ayuda">Fichero original: {{ logo_actual.logo_nombre or '—' }} ·
+        actualizado el {{ logo_actual.actualizado_at | fecha_es(con_hora=True) }}.</p>
+    {% else %}
+      <p class="ayuda">Todavía no hay ningún logo; se usa el icono por defecto.</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('ajustes.logo_subir') }}"
+          enctype="multipart/form-data" class="campo-fila">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="campo">
+        <label for="logo-fichero">{% if logo_actual %}Reemplazar el logo{% else %}Subir un logo{% endif %}</label>
+        <input type="file" id="logo-fichero" name="logo" accept="image/png,image/jpeg,image/webp" required>
+      </div>
+      <button class="btn primario" type="submit">Subir</button>
+    </form>
+    {% if logo_actual %}
+      <form method="post" action="{{ url_for('ajustes.logo_borrar') }}"
+            data-confirm="¿Quitar el logo y volver al icono por defecto?">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <button class="btn" type="submit">Quitar el logo</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('ajustes.guardar') }}"
+      data-accion-viva="pagina-ajustes" data-accion-espera="Guardando…" data-accion-tiempo="60000">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+
+  {% for grupo, items in grupos %}
+  <div class="panel"{% if loop.first %} data-tour="2" data-tour-titulo="Grupos de ajustes" data-tour-texto="Cada grupo reúne ajustes relacionados. Junto a cada campo se explica qué hace y cuál es su valor por defecto; si un valor no es válido, se avisa al guardar y ese ajuste se mantiene como estaba."{% endif %}>
+    <div class="panel-cabecera"><h2>{{ grupo }}</h2></div>
+    <div class="panel-cuerpo">
+      {% for clave, etiqueta, tipo, ayuda in items %}
+        {% set valor = actuales.get(clave) %}
+        {% set defecto = defectos.get(clave) %}
+        {% if tipo == 'bool' %}
+          <div class="casilla">
+            <input type="hidden" name="__presente__{{ clave }}" value="1">
+            <input type="checkbox" id="{{ clave }}" name="{{ clave }}" value="1"
+                   {% if valor %}checked{% endif %}>
+            <label for="{{ clave }}">
+              {{ etiqueta }}
+              {% if ayuda %}<div class="ayuda">{{ ayuda }}</div>{% endif %}
+            </label>
+          </div>
+        {% else %}
+          <div class="campo">
+            <label for="{{ clave }}">{{ etiqueta }}</label>
+            {% if tipo.startswith('opcion:') %}
+              <select id="{{ clave }}" name="{{ clave }}" class="maxw-280">
+                {% for op in tipo.split(':')[1].split(',') %}
+                  {# Los valores internos nunca se leen en pantalla: cada opción se enseña por
+                   su efecto, no por el producto que lo hace (2026-09-15). #}
+                <option value="{{ op }}" {% if op == valor %}selected{% endif %}>{{ {"Critical": "Crítica", "High": "Alta", "Medium": "Media", "Low": "Baja", "hybrid": "Cuidada en lo grave y rápida en el resto", "argos": "Siempre rápida", "ollama": "Siempre cuidada", "none": "No traducir", "true": "Sí", "false": "No", "sistema": "Seguir navegador", "claro": "Tema claro", "oscuro": "Tema oscuro", "viva": "Viva", "corporativa": "Corporativa", "oscura": "Oscura", "pastel": "Pastel", "smtp": "SMTP (servidor tradicional)", "gmail": "Gmail (OAuth Google)"}.get(op, op) }}</option>
+                {% endfor %}
+              </select>
+            {% elif tipo == 'int' %}
+              <input type="number" id="{{ clave }}" name="{{ clave }}"
+                     value="{{ valor if valor is not none else '' }}"
+                     min="0" class="maxw-160">
+            {% elif tipo == 'lista' %}
+              {# Las listas de severidades se leen y se escriben en español (2026-09-15). #}
+              <input type="text" id="{{ clave }}" name="{{ clave }}"
+                     value="{% if valor is iterable and valor is not string %}{% if clave in listas_de_severidad %}{{ valor | map('severidad_es') | join(', ') }}{% else %}{{ valor | join(', ') }}{% endif %}{% else %}{{ valor or '' }}{% endif %}"
+                     class="maxw-420">
+            {% else %}
+              <input type="text" id="{{ clave }}" name="{{ clave }}"
+                     value="{{ valor or '' }}" class="maxw-420">
+            {% endif %}
+            {% if ayuda %}<div class="ayuda">{{ ayuda }}</div>{% endif %}
+            {% if valor != defecto %}
+              <div class="ayuda">
+                Valor por defecto:
+                <span class="mono">{% if defecto is iterable and defecto is not string %}{% if clave in listas_de_severidad %}{{ defecto | map('severidad_es') | join(', ') }}{% else %}{{ defecto | join(', ') }}{% endif %}{% elif defecto is sameas true %}Sí{% elif defecto is sameas false %}No{% else %}{{ defecto }}{% endif %}</span>
+              </div>
+            {% endif %}
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="panel" data-tour="3" data-tour-titulo="Guardar" data-tour-texto="Los cambios de todos los grupos se guardan a la vez con este botón y quedan registrados en Auditoría con el valor anterior y el nuevo.">
+    <div class="panel-cuerpo">
+      <button class="btn primario" type="submit">Guardar todos los ajustes</button>
+      <a class="btn" href="{{ url_for('panel.inicio') }}">Cancelar</a>
+    </div>
+  </div>
+</form>
+</div>{# fin de la zona viva #}
+{% endblock %}

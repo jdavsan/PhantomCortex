@@ -1,0 +1,333 @@
+{% extends "base.html" %}
+{% block titulo %}Fuentes{% endblock %}
+{% block contenido %}
+{# Zona viva (2026-09-10): esta pantalla se actualiza sin recargar. Las acciones
+   marcadas con `data-accion-viva` y los enlaces de esta misma dirección piden la
+   página al servidor y sustituyen solo este trozo, así que no se pierde el sitio
+   ni la posición de desplazamiento. Sin JavaScript todo funciona igual que antes,
+   con recarga. Contrato en docs/INTERACCION_SIN_RECARGA_2026-09-10.md. #}
+<div id="pagina-fuentes" data-zona-viva data-zona-nombre="Fuentes de amenazas" tabindex="-1">
+{% from "_paginacion.html" import paginacion %}
+{#
+  Fuentes de consulta (sección 6 «Fuentes» de docs/DISENO_INTERFAZ_2026-09-03.md).
+  Orden de lectura: 1) qué pasa ahora (métricas y aviso de caídas),
+  2) cuánto y cómo (dona de estado de las activas, fuentes que más aportan),
+  3) detalle en tabla (catálogo con chispa de las últimas comprobaciones).
+  Sin style= ni on*=: la CSP no admite nada en línea. Los gráficos son SVG
+  generados en el servidor (graficos.py) con colores por clase.
+#}
+
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Fuentes de consulta" data-tour-texto="De dónde se recolectan los avisos: organismos oficiales, fabricantes, bases de datos de vulnerabilidades y medios especializados. Aquí se ve si funcionan y cuánto aportan.">
+  <div>
+    <h1>Fuentes de consulta</h1>
+    <p>Estado y validación de las fuentes de inteligencia. Pruebe una fuente antes
+       de activarla: una fuente que falla en silencio deja de aportar sin que nadie
+       lo note.</p>
+  </div>
+  <div class="acciones-titulo">
+    {% if es_admin %}
+    <form method="post" action="{{ url_for('fuentes.probar_todas') }}" class="inline"
+          data-accion-viva="pagina-fuentes" data-accion-espera="Comprobando las fuentes…" data-accion-tiempo="120000">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn" type="submit">Probar todas las activas</button>
+    </form>
+    <form method="post" action="{{ url_for('fuentes.sembrar') }}" class="inline"
+          data-accion-viva="pagina-fuentes" data-accion-espera="Sembrando…" data-accion-tiempo="60000">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn" type="submit">Cargar catálogo por defecto</button>
+    </form>
+    <button class="btn primario" type="button"
+            data-toggle="form-nueva" aria-expanded="false">
+      Añadir fuente
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+{# ================================================== 1. qué pasa ahora #}
+<div class="rejilla c5 mb-18">
+  <div class="panel metrica">
+    <div class="valor">{{ resumen.activas | numero }}</div>
+    <div class="etiqueta">Activas</div>
+    <div class="nota">{{ resumen.feeds }} canal{{ 'es' if resumen.feeds != 1 }} RSS/Atom y {{ resumen.apis }} API de enriquecimiento</div>
+  </div>
+  <div class="panel metrica exito">
+    <div class="valor">{{ resumen.operativas | numero }}</div>
+    <div class="etiqueta">Operativas</div>
+    <div class="nota">de {{ resumen.activas }} activas</div>
+  </div>
+  <div class="panel metrica {% if resumen.degradadas %}medio{% else %}neutro{% endif %}">
+    <div class="valor">{{ resumen.degradadas | numero }}</div>
+    <div class="etiqueta">Degradadas</div>
+    <div class="nota">fallan a veces o aportan poco</div>
+  </div>
+  <div class="panel metrica {% if resumen.caidas %}critico{% else %}neutro{% endif %}">
+    <div class="valor">{{ resumen.caidas | numero }}</div>
+    <div class="etiqueta">Caídas</div>
+    <div class="nota">tres fallos seguidos o más</div>
+  </div>
+  <div class="panel metrica neutro">
+    <div class="valor">{{ resumen.desactivadas | numero }}</div>
+    <div class="etiqueta">Desactivadas</div>
+    <div class="nota">no se consultan</div>
+  </div>
+</div>
+
+{% if resumen.caidas %}
+<div class="aviso error" role="alert">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 17h.01"/></svg>
+  <div>
+    <strong>{{ resumen.caidas }} fuente{{ 's' if resumen.caidas != 1 }} caída{{ 's' if resumen.caidas != 1 }}.</strong>
+    Una fuente caída no genera error visible en la ejecución diaria: solo se
+    detecta aquí o por el aviso automático al administrador.
+  </div>
+</div>
+{% endif %}
+
+{% if es_admin %}
+<div class="panel" id="form-nueva" hidden>
+  <div class="panel-cabecera"><h2>Nueva fuente</h2></div>
+  <div class="panel-cuerpo">
+    <form method="post" action="{{ url_for('fuentes.nueva') }}"
+          data-accion-viva="pagina-fuentes" data-accion-espera="Creando…" data-accion-tiempo="60000">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="campo-fila">
+        <div class="campo">
+          <label for="n-name">Nombre</label>
+          <input type="text" id="n-name" name="name" required placeholder="CISA Advisories">
+        </div>
+        <div class="campo flex2">
+          <label for="n-url">URL</label>
+          <input type="url" id="n-url" name="url" required
+                 placeholder="https://ejemplo.com/rss.xml">
+        </div>
+      </div>
+      <div class="campo-fila">
+        <div class="campo">
+          <label for="n-kind">Tipo</label>
+          <select id="n-kind" name="kind">
+            {% for t in tipos %}<option value="{{ t }}">{{ tipos_es.get(t, t) }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="campo">
+          <label for="n-category">Categoría</label>
+          <select id="n-category" name="category">
+            {% for c in categorias %}
+              <option value="{{ c }}"{% if c=='news' %} selected{% endif %}>{{ categorias_es.get(c, c) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="campo">
+          <label for="n-priority">Prioridad</label>
+          <select id="n-priority" name="priority">
+            {% for p in prioridades %}
+              <option value="{{ p }}"{% if p=='medium' %} selected{% endif %}>{{ prioridades_es.get(p, p) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="campo">
+          <label for="n-timeout">Tiempo máximo (segundos)</label>
+          <input type="number" id="n-timeout" name="timeout_s" value="30" min="5" max="120">
+        </div>
+      </div>
+      <div class="campo">
+        <label for="n-notes">Notas</label>
+        <input type="text" id="n-notes" name="notes"
+               placeholder="Por qué se añade, particularidades del canal…">
+      </div>
+      <div class="casilla">
+        <input type="checkbox" id="n-enabled" name="enabled" value="1">
+        <label for="n-enabled">Activar de inmediato
+          <span class="tenue">(recomendado: dejarla inactiva y probarla primero)</span>
+        </label>
+      </div>
+      <button class="btn primario" type="submit">Crear fuente</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{# ========================================= 2. cuánto y cómo #}
+<div class="rejilla uno-dos">
+  {# dona de estado de las fuentes activas #}
+  <div class="panel" data-tour="2" data-tour-titulo="Salud" data-tour-texto="Cuántas fuentes responden bien, cuántas están degradadas y cuántas caídas en las últimas comprobaciones.">
+    <div class="panel-cabecera">
+      <h2>Estado de las fuentes activas</h2>
+      <span class="sub">¿Están respondiendo las {{ resumen.activas }} fuentes que se consultan? Estado calculado sobre las últimas {{ ventana }} comprobaciones de cada una.</span>
+    </div>
+    <div class="panel-cuerpo">
+      {{ graficos.dona(graf.estado, centro_valor=resumen.activas, centro_etiqueta="activas",
+                       aria="Estado de las " ~ resumen.activas ~ " fuentes activas: operativas, degradadas, caídas y sin comprobar") }}
+      <p class="pequeno suave mt-12">
+        {% if resumen.total %}
+          {{ resumen.feeds }} canal{{ 'es' if resumen.feeds != 1 }} RSS/Atom que se recolecta{{ 'n' if resumen.feeds != 1 }} a diario y {{ resumen.apis }} API de
+          enriquecimiento (CISA KEV, NVD y EPSS) que completan las amenazas ya recogidas.
+          {% if resumen.desactivadas == 1 %}
+            La fuente desactivada no entra en el gráfico: se conserva sin consultarse porque es un
+            duplicado o una fuente retirada que las amenazas históricas siguen citando.
+          {% elif resumen.desactivadas %}
+            Las {{ resumen.desactivadas }} desactivadas no entran en el gráfico: se conservan sin
+            consultarse porque son duplicados o fuentes retiradas que las amenazas históricas siguen citando.
+          {% endif %}
+        {% else %}
+          No hay fuentes registradas todavía.
+        {% endif %}
+      </p>
+    </div>
+  </div>
+
+  {# fuentes que más amenazas han aportado #}
+  <div class="panel" data-tour="3" data-tour-titulo="Rendimiento" data-tour-texto="Qué fuentes generan más amenazas útiles. Las que solo producen ruido se desactivan (no se eliminan, para conservar el histórico).">
+    <div class="panel-cabecera">
+      <h2>Fuentes que más aportan</h2>
+      <span class="sub">¿De dónde proceden las amenazas registradas? Las diez fuentes con más amenazas distintas aportadas en todo el histórico, coloreadas por categoría. Pulse el nombre para abrir su ficha.{% if sin_bajas %} Se cuentan las mismas amenazas que en Amenazas y en Tendencias: las de las severidades que la organización reporta.{% endif %}</span>
+    </div>
+    <div class="panel-cuerpo">
+      {#
+        La leyenda suma solo las diez barras dibujadas y una amenaza citada por tres
+        fuentes cuenta en las tres, así que esa suma no es el total del sistema
+        (auditoría de tableros del 2026-09-15). `leyenda_nota` lo dice bajo la leyenda.
+      #}
+      {{ graficos.barras_horizontales(graf.top, nombres=graf.nombres_categorias, alto_fila=26, max_etiqueta=32,
+                                      leyenda_nota="Suma de las " ~ (graf.top | length | numero) ~ " barras mostradas, no del catálogo: una amenaza citada por varias fuentes cuenta en todas ellas. El total sin repeticiones son " ~ (resumen.amenazas_distintas | numero) ~ " amenazas distintas.",
+                                      aria="Las diez fuentes que más amenazas distintas han aportado, coloreadas por categoría") }}
+    </div>
+    <div class="panel-pie">
+      {% if top %}
+        Las mismas cifras aparecen en la columna «Amenazas» del catálogo. Una amenaza citada por varias
+        fuentes cuenta una vez para cada una; el total del sistema no es la suma de las barras.
+      {% else %}
+        Todavía no hay amenazas con procedencia registrada: el gráfico se llenará con la primera recolección.
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ================================================= 3. detalle en tabla #}
+<div class="panel" data-tour="4" data-tour-titulo="Todas las fuentes" data-tour-texto="Tipo, prioridad, estado y última comprobación. Probar en vivo comprueba una fuente en el momento.">
+  <div class="panel-cabecera">
+    <h2>Catálogo</h2>
+    <span class="sub">Todas las fuentes registradas, activas primero, en páginas de {{ por_pagina | numero }}. La tasa de éxito y la chispa de «Últimas comprobaciones» se calculan sobre las últimas {{ ventana }} comprobaciones de cada fuente.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno" id="catalogo-fuentes" tabindex="-1" data-zona-viva
+       data-zona-nombre="Catálogo de fuentes">
+    {% if filas %}
+    <div class="tabla-envoltorio">
+      <table>
+        <thead>
+          <tr>
+            <th>Fuente</th><th>Categoría</th>
+            <th title="Estado de salud; si hay fallos consecutivos desde la comprobación más reciente se indican junto al estado y el último error debajo">Estado</th>
+            <th title="Entradas aceptadas en cada una de las últimas {{ ventana }} comprobaciones, de la más antigua a la más reciente">Últimas comprobaciones</th>
+            <th class="num" title="Porcentaje de comprobaciones correctas en la ventana">Éxito</th>
+            <th class="num" title="Entradas devueltas en la última comprobación">Entradas</th>
+            <th class="num" title="Amenazas distintas que ha aportado esta fuente en todo el histórico">Amenazas</th>
+            <th class="acciones"></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for f in filas %}
+          {% set s = f.salud or {} %}
+          <tr id="{{ f.slug }}">
+            <td>
+              <a href="{{ url_for('fuentes.detalle', source_id=f.id) }}">{{ f.name }}</a>
+              <div class="pequeno tenue mono" title="{{ f.url }}">{{ f.url | recortar(40) }}</div>
+              {% if f.notes %}<div class="pequeno tenue">{{ f.notes | recortar(60) }}</div>{% endif %}
+            </td>
+            <td class="nowrap">
+              <span class="insignia neutra"><span class="leyenda-punto serie-{{ f.categoria_clave }}"></span> {{ f.categoria_es }}</span>
+              {% if f.priority in ('critical','high') %}
+                <span class="insignia {{ f.priority }}" title="Prioridad de la fuente">{{ f.prioridad_es }}</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="nowrap">
+                {% if not f.enabled %}
+                  <span class="punto desactivada"></span>{{ f.estado_es }}
+                {% else %}
+                  <span class="punto {{ s.estado | default('sin_datos') }}"></span>{{ f.estado_es }}
+                {% endif %}
+                {% if s.racha_fallos %}
+                  · <span class="txt-critico-b" title="Fallos consecutivos desde la comprobación más reciente">{{ s.racha_fallos | numero }} fallo{{ 's seguidos' if s.racha_fallos != 1 }}</span>
+                {% endif %}
+              </span>
+              {% if s.ultimo_error %}
+                <div class="pequeno mono txt-critico" title="Último error: {{ s.ultimo_error }}">{{ s.ultimo_error | recortar(36) }}</div>
+              {% endif %}
+            </td>
+            <td class="celda-chispa">
+              {% if f.chispa | length >= minimo_chispa %}
+                {{ graficos.chispa(f.chispa, ancho=90, alto=24, clave=f.estado_clave) }}
+              {% elif f.chispa_texto %}
+                <span class="pequeno suave nowrap">{{ f.chispa_texto }}</span>
+              {% else %}<span class="tenue">—</span>{% endif %}
+            </td>
+            <td class="num nowrap">
+              {% if s.tasa_exito is number %}{{ s.tasa_exito | round(0) | int }}&nbsp;%{% else %}—{% endif %}
+            </td>
+            <td class="num">{% if s.ultimas_entradas is not none %}{{ s.ultimas_entradas | numero }}{% else %}—{% endif %}</td>
+            <td class="num">{% if f.amenazas %}{{ f.amenazas | numero }}{% else %}<span class="tenue">—</span>{% endif %}</td>
+            <td class="acciones nowrap">
+              <div class="btn-grupo">
+                <form method="post" action="{{ url_for('fuentes.probar', source_id=f.id) }}"
+                      data-accion-viva="pagina-fuentes" data-accion-espera="Comprobando…" data-accion-tiempo="120000">
+                  <input type="hidden" name="csrf" value="{{ csrf }}">
+                  <button class="btn pequeno" type="submit">Probar</button>
+                </form>
+                {% if es_admin %}
+                <form method="post" action="{{ url_for('fuentes.activar', source_id=f.id) }}"
+                      data-accion-viva="pagina-fuentes" data-accion-espera="Aplicando…">
+                  <input type="hidden" name="csrf" value="{{ csrf }}">
+                  <input type="hidden" name="enabled" value="{{ 0 if f.enabled else 1 }}">
+                  <button class="btn pequeno" type="submit">
+                    {{ 'Desactivar' if f.enabled else 'Activar' }}
+                  </button>
+                </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td class="nowrap">{{ resumen.total | numero }} fuente{{ 's' if resumen.total != 1 }}</td>
+            <td colspan="2" class="nowrap">{{ resumen.activas | numero }} activas · {{ resumen.desactivadas | numero }} desactivadas</td>
+            <td></td>
+            <td class="num nowrap" colspan="2">{{ resumen.operativas | numero }} operativas de {{ resumen.activas | numero }}</td>
+            <td class="num nowrap" title="Amenazas distintas con procedencia registrada, contando solo las severidades que la organización reporta: es la misma cifra que encabeza la página de Amenazas. No es la suma de la columna: una amenaza citada por varias fuentes cuenta una vez para cada fuente y una sola vez aquí">{{ resumen.amenazas_distintas | numero }} distintas</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {{ paginacion('fuentes.lista', args, pagina, paginas, total, por_pagina,
+                  singular='fuente', plural='fuentes', ancla='catalogo-fuentes', zona='catalogo-fuentes',
+                  titulo='Paginación del catálogo de fuentes') }}
+    {% else %}
+    <div class="vacio">
+      <p>No hay fuentes registradas.</p>
+      {% if es_admin %}
+      <p class="pequeno">Use «Cargar catálogo por defecto» para sembrar las fuentes
+         ya verificadas.</p>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% if filas %}
+  <div class="panel-pie">
+    «Degradada» significa que falla a veces o que responde sin aportar entradas; «Caída», tres fallos
+    seguidos o más; el número de fallos seguidos y el último error acompañan al estado. La chispa muestra
+    las entradas aceptadas en cada comprobación (las que superaron los filtros de fecha y de correlación):
+    una fuente operativa con la chispa plana funciona, pero no aporta nada relevante para esta organización.
+    El pie de «Amenazas» cuenta las amenazas distintas con procedencia: una amenaza citada por varias fuentes
+    cuenta una vez para cada fuente, así que la columna no suma el total.
+    {% if sin_bajas %}La columna, el pie y el gráfico cuentan las mismas amenazas que
+    <a href="{{ url_for('amenazas.lista') }}">Amenazas</a> y Tendencias: las de las severidades que
+    la organización reporta. Hasta el 15 de septiembre de 2026 esta página las contaba todas y decía
+    7.514 donde las otras dos decían 7.284.{% endif %}
+  </div>
+  {% endif %}
+</div>
+</div>{# fin de la zona viva #}
+{% endblock %}

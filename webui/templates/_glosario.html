@@ -1,0 +1,111 @@
+{# Glosario de terminos: incluido al pie de las paginas de consulta.
+   Peticion del usuario: cada apartado y punto debe ser claro sin adivinar siglas. #}
+<div class="panel">
+  <div class="panel-cabecera">
+    <h2>Cómo leer estos datos</h2>
+    <span class="sub">Significado de cada columna y término</span>
+  </div>
+  <div class="panel-cuerpo">
+    <dl class="glosario">
+      <dt>Severidad</dt>
+      <dd>Gravedad técnica de la vulnerabilidad: <strong>Crítica</strong>, <strong>Alta</strong>
+          o <strong>Media</strong>. Son las tres que la plataforma reporta, y las únicas que
+          aparecen en las cifras, las listas, los correos y los informes. Debajo de cada
+          severidad se indica de dónde sale (NVD, vector CVSS, KEV o heurística).</dd>
+      <dt>CVE</dt>
+      <dd>Identificador único y público de una vulnerabilidad (por ejemplo CVE-2026-1234).
+          «Sin CVE» significa que el aviso no lo cita: suele ser una noticia o una campaña, no un fallo concreto.</dd>
+      <dt>CVSS</dt>
+      <dd>Puntuación oficial de gravedad técnica, de 0 a 10. Se muestra <em>no disponible</em>
+          cuando no existe: el sistema nunca inventa un número.</dd>
+      <dt>EPSS</dt>
+      <dd>Probabilidad estimada (0-100 %) de que la vulnerabilidad se explote en los próximos 30 días.
+          Un CVSS alto con EPSS bajo es grave pero poco probable; un EPSS alto exige actuar.</dd>
+      <dt>KEV</dt>
+      <dd>La vulnerabilidad figura en el catálogo de CISA de <em>explotación activa confirmada</em>.
+          Es la señal más fuerte de urgencia: alguien ya la está usando.</dd>
+      <dt>Relevancia</dt>
+      <dd>Valor de 0 a 100 propio de esta organización. Combina la severidad con la criticidad
+          y exposición de las tecnologías afectadas, si la versión instalada es vulnerable
+          y si está en KEV. Ordena lo que hay que mirar primero.</dd>
+      <dt>Veredicto de versión</dt>
+      <dd><span class="chip afectada">Afectada</span> la versión instalada es vulnerable según el aviso;
+          <span class="chip no-afectada">No afectada</span> no lo es;
+          <span class="chip">Sin determinar</span> falta la versión en el inventario o el aviso no la precisa.
+          Por prudencia, nunca se descarta una amenaza por suposición.</dd>
+      <dt>Confirmadas / Descartadas</dt>
+      <dd>Recuento de amenazas con veredicto «afectada» y «no afectada» respectivamente.
+          Las descartadas son ruido que el inventario de versiones ha evitado.</dd>
+      <dt>Sin dato</dt>
+      <dd>No es un cero: es que la comprobación <strong>no se ha podido hacer</strong>, porque el
+          aviso no precisa qué versiones afecta o porque falta la versión instalada en el
+          inventario. Un cero significa que sí se comprobó y no salió nada; «sin dato»
+          significa que todavía no se sabe. Se escriben distinto a propósito.</dd>
+      <dt>Serie de versiones</dt>
+      <dd>El primer número de una versión: <span class="mono">10.0.26100</span> y
+          <span class="mono">10.0.19045</span> son de la serie 10. Cuando una versión instalada
+          pertenece a una serie que casi ningún activo usa, la ficha de la tecnología la marca
+          en ámbar («no encaja con el patrón»): suele ser otro programa clasificado por error en
+          esa tecnología, y es la versión con la que se comparan los avisos.</dd>
+      <dt>Versión instalada más antigua</dt>
+      <dd>De todas las versiones que OCS Inventory encuentra de una tecnología, la más antigua.
+          Es la que se compara con los avisos, por prudencia: si la más vieja no es vulnerable,
+          ninguna lo es.</dd>
+      <dt>Traducción automática</dt>
+      <dd>Las descripciones llegan en inglés y se traducen automáticamente. Cuando la traducción
+          vierte mal un término técnico que debería quedarse en inglés (por ejemplo
+          <span class="mono">use-after-free</span> o <span class="mono">hardcoded</span>), la ficha
+          lo advierte, enseña el texto original y deja plegada la traducción: el original manda.</dd>
+      <dt>Huella interna</dt>
+      <dd>Código largo que la plataforma usa para reconocer un aviso ya visto y no duplicarlo.
+          No es un identificador público y no sirve para buscar en ninguna parte: solo lo usa el
+          soporte técnico. El identificador público de una vulnerabilidad es el CVE.</dd>
+      <dt>Criticidad y exposición</dt>
+      <dd>Propiedades de cada tecnología en el inventario: cuánto importa para el negocio
+          y si es alcanzable desde Internet, desde la red interna o solo localmente.</dd>
+      <dt>Periodo</dt>
+      <dd>Mes en que la amenaza se registró por primera vez. Un mismo CVE en varios periodos
+          indica que sigue apareciendo en avisos: probable deuda de parcheo.</dd>
+      <dt>Activo</dt>
+      <dd>Un servidor o un equipo de cómputo real, tal como lo informa OCS Inventory
+          (nombre, sistema operativo, dirección IP y programas instalados con su versión).</dd>
+      <dt>Aplicabilidad por activo</dt>
+      <dd>Respuesta a «¿le aplica este CVE a esta máquina?»: se compara la versión del paquete
+          instalado con la versión que corrige el fallo. <strong>Afectado</strong>: la instalada es
+          anterior; <strong>No afectado</strong>: ya lleva la corrección o queda fuera del rango;
+          <strong>Sin dato</strong>: no hay información suficiente para decidir.</dd>
+      <dt>OSV.dev y VuXML</dt>
+      <dd>Bases de datos públicas de vulnerabilidades por paquete: OSV.dev para Debian y Ubuntu
+          (registros DEBIAN-CVE y UBUNTU-CVE con la versión corregida) y VuXML para FreeBSD
+          (puertos y sistema base). Son la fuente de los veredictos por activo.</dd>
+      <dt>Fin de soporte</dt>
+      <dd>Fecha, según endoflife.date, a partir de la cual un sistema operativo deja de recibir
+          actualizaciones de seguridad. Un activo fuera de soporte es vulnerable aunque no tenga
+          ningún CVE abierto.</dd>
+      <dt>Mapa de nombres</dt>
+      <dd>Reglas que traducen el nombre de un programa en OCS a una tecnología del inventario
+          («Google Chrome» → Chrome). Permite saber en cuántos activos está cada tecnología y con
+          qué versiones; lo no clasificado aparece en la página Software.</dd>
+      <dt>Entorno</dt>
+      <dd>Papel del activo en la organización: <strong>producción</strong>, <strong>contingencia</strong>, desarrollo,
+          pruebas de usuario o soporte y pruebas. Viene de OCS o del sufijo del nombre (‑PD, ‑CT, ‑DS, ‑PU, ‑SP).
+          Producción y contingencia son los entornos expuestos y pesan más en la prioridad.</dd>
+      <dt>Proceso</dt>
+      <dd>Proceso de negocio al que pertenece un servidor (campo «TAG» de OCS Inventory). Permite agrupar los servidores
+          y ver qué procesos concentran vulnerabilidades o sistemas sin soporte.</dd>
+      <dt>Prioridad</dt>
+      <dd>Suma de gravedad técnica (CVSS), explotación confirmada (KEV), probabilidad (EPSS), exposición (tecnologías del
+          inventario y activos reales, con más peso en producción y contingencia), facilidad de explotación (vector CVSS)
+          y parche disponible. Cada ficha de amenaza muestra el desglose en «Cómo se calcula la prioridad».</dd>
+      <dt>Plan de remediación</dt>
+      <dd>Para una amenaza o un activo: los activos con la versión vulnerable agrupados por sistema y paquete, con la
+          orden concreta que los corrige y la versión objetivo. Se puede descargar como texto para un tique.</dd>
+      <dt>SBOM</dt>
+      <dd>Lista de materiales de software: qué bibliotecas y paquetes lleva dentro una aplicación (Java, Python, Node…),
+          algo que OCS no ve. Se importa en formato CycloneDX o SPDX y cada componente se comprueba en OSV.dev.</dd>
+      <dt>OpenSCAP</dt>
+      <dd>Herramienta que evalúa la configuración de un sistema frente a una guía de seguridad (perfil XCCDF con reglas
+          OVAL). Sus resultados se importan por activo: reglas que se cumplen y que no, con su severidad.</dd>
+    </dl>
+  </div>
+</div>

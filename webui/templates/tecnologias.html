@@ -1,0 +1,441 @@
+{% extends "base.html" %}
+{% block titulo %}Inventario{% endblock %}
+{% block contenido %}
+{# Zona viva (2026-09-10): esta pantalla se actualiza sin recargar. Las acciones
+   marcadas con `data-accion-viva` y los enlaces de esta misma dirección piden la
+   página al servidor y sustituyen solo este trozo, así que no se pierde el sitio
+   ni la posición de desplazamiento. Sin JavaScript todo funciona igual que antes,
+   con recarga. Contrato en docs/INTERACCION_SIN_RECARGA_2026-09-10.md. #}
+<div id="pagina-tecnologias" data-zona-viva data-zona-nombre="Inventario de tecnologías" tabindex="-1">
+{% from "_paginacion.html" import paginacion %}
+{#
+  Inventario tecnológico (sección 6 «Inventario» de docs/DISENO_INTERFAZ_2026-09-03.md).
+  Orden de lectura: 1) qué pasa ahora (métricas y aviso de versiones que faltan),
+  2) cuánto y cómo (dona por criticidad, tecnologías con más amenazas, cobertura
+  de versiones por categoría), 3) detalle en tabla. Sin style= ni on*= (CSP
+  estricta): los gráficos son SVG del servidor con colores por clase.
+#}
+
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Inventario tecnológico" data-tour-texto="Las tecnologías que se vigilan: sistemas, servidores web, bases de datos, navegadores… Cada una con su criticidad para el negocio, su exposición y la versión instalada, que ahora se rellena sola desde OCS Inventory.">
+  <div>
+    <h1>Inventario tecnológico</h1>
+    <p>Registre la <strong>versión instalada</strong> de cada tecnología: es lo que
+       permite decidir si un aviso que afecta a «versiones anteriores a 4.3» nos
+       afecta realmente, y descartar el resto como ruido.</p>
+  </div>
+  <div class="acciones-titulo">
+    <a class="btn" href="{{ url_for('tecnologias.exportar') }}">Exportar CSV</a>
+    {% if es_admin %}
+    <button class="btn" type="button"
+            data-toggle="form-importar" aria-expanded="false">
+      Importar CSV
+    </button>
+    <form method="post" action="{{ url_for('tecnologias.sembrar') }}" class="inline"
+          data-accion-viva="pagina-tecnologias" data-accion-espera="Sembrando…" data-accion-tiempo="60000">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn" type="submit">Cargar inventario base</button>
+    </form>
+    <button class="btn primario" type="button"
+            data-toggle="form-nueva" aria-expanded="false">
+      Añadir tecnología
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+{# ================================================== 1. qué pasa ahora #}
+<div class="rejilla c4 mb-18" data-tour="2" data-tour-titulo="Indicadores" data-tour-texto="Cuántas tecnologías hay y cuántas tienen versión registrada. Sin versión no se puede descartar un aviso por versión.">
+  <div class="panel metrica">
+    <div class="valor">{{ resumen.total | numero }}</div>
+    <div class="etiqueta">Tecnologías</div>
+    {# Concordancia de las cifras (2026-09-15): «1 críticas» era una errata. #}
+    <div class="nota">{{ resumen.criticidad.critical | numero }} {{ 'crítica' if resumen.criticidad.critical == 1 else 'críticas' }} ·
+      {{ resumen.criticidad.high | numero }} {{ 'alta' if resumen.criticidad.high == 1 else 'altas' }}</div>
+  </div>
+  <div class="panel metrica exito">
+    <div class="valor">{{ resumen.con_version | numero }}</div>
+    <div class="etiqueta">Con versión registrada</div>
+    <div class="nota">{{ graficos.fmt(resumen.pct, 1) }} % del inventario</div>
+  </div>
+  <div class="panel metrica {% if resumen.sin_version %}medio{% else %}exito{% endif %}">
+    <div class="valor">{{ resumen.sin_version | numero }}</div>
+    <div class="etiqueta">Sin versión</div>
+    <div class="nota">{{ 'No se puede descartar' if resumen.sin_version == 1 else 'No se pueden descartar' }} por versión</div>
+  </div>
+  <div class="panel metrica neutro">
+    <div class="valor fs-18">
+      <a href="{{ url_for('tecnologias.lista', sin_version=1) }}">Completar</a>
+    </div>
+    <div class="etiqueta">Pendientes</div>
+    <div class="nota">filtrar las que faltan</div>
+  </div>
+</div>
+
+{% if resumen.sin_version and resumen.total %}
+<div class="aviso aviso-nivel" role="status">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+  <div>
+    <strong>{{ resumen.sin_version | numero }} {{ 'tecnología sin versión registrada' if resumen.sin_version == 1 else 'tecnologías sin versión registrada' }}.</strong>
+    Mientras falte la versión, todas sus amenazas quedan como «sin determinar» y no
+    se pueden descartar automáticamente.
+    Puede exportar el CSV, completarlo en hoja de cálculo e importarlo de vuelta.
+  </div>
+</div>
+{% endif %}
+
+{% if es_admin %}
+<div class="panel" id="form-importar" hidden>
+  <div class="panel-cabecera"><h2>Importar versiones desde CSV</h2></div>
+  <div class="panel-cuerpo">
+    <form method="post" action="{{ url_for('tecnologias.importar') }}"
+          enctype="multipart/form-data"
+          data-accion-viva="pagina-tecnologias" data-accion-espera="Importando…" data-accion-tiempo="120000">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="campo">
+        <label for="archivo">Archivo CSV</label>
+        <input type="file" id="archivo" name="archivo" accept=".csv,text/csv" required>
+        <div class="ayuda">
+          Exporte primero el inventario, complete las columnas
+          <span class="mono">version_instalada</span>,
+          <span class="mono">num_sistemas</span>,
+          <span class="mono">criticidad</span>,
+          <span class="mono">exposicion</span> y
+          <span class="mono">responsable</span>, y súbalo aquí.
+          La columna <span class="mono">slug</span> es el
+          <strong>identificador interno</strong> de cada tecnología (su nombre en minúsculas
+          y sin espacios, por ejemplo <span class="mono">microsoft-office</span>): es lo que
+          permite emparejar cada fila del archivo con su tecnología, así que
+          <strong>no la modifique</strong>. Solo se actualizan tecnologías existentes.
+        </div>
+      </div>
+      <button class="btn primario" type="submit">Importar</button>
+    </form>
+  </div>
+</div>
+
+<div class="panel" id="form-nueva" hidden>
+  <div class="panel-cabecera"><h2>Nueva tecnología</h2></div>
+  <div class="panel-cuerpo">
+    <form method="post" action="{{ url_for('tecnologias.nueva') }}"
+          data-accion-viva="pagina-tecnologias" data-accion-espera="Creando…">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="campo-fila">
+        <div class="campo">
+          <label for="t-name">Nombre</label>
+          <input type="text" id="t-name" name="name" required placeholder="PostgreSQL">
+        </div>
+        <div class="campo">
+          <label for="t-vendor">Fabricante</label>
+          <input type="text" id="t-vendor" name="vendor" placeholder="PostgreSQL Global Development Group">
+        </div>
+        <div class="campo">
+          <label for="t-cat">Categoría</label>
+          <select id="t-cat" name="category">
+            {% for c in categorias %}<option value="{{ c }}">{{ categoria_es(c) }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="campo-fila">
+        <div class="campo">
+          <label for="t-ver">Versión instalada</label>
+          <input type="text" id="t-ver" name="version_installed" placeholder="15.4">
+        </div>
+        <div class="campo">
+          <label for="t-verl">Versión disponible</label>
+          <input type="text" id="t-verl" name="version_latest" placeholder="16.2">
+        </div>
+        <div class="campo">
+          <label for="t-crit">Criticidad</label>
+          <select id="t-crit" name="criticality">
+            {% for c in criticidades %}
+              <option value="{{ c }}"{% if c=='medium' %} selected{% endif %}>{{ criticidades_es.get(c, c) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="campo">
+          <label for="t-exp">Exposición</label>
+          <select id="t-exp" name="exposure">
+            {% for e in exposiciones %}
+              <option value="{{ e }}"{% if e=='interna' %} selected{% endif %}>{{ exposiciones_es.get(e, e) }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="campo">
+          <label for="t-sys">Número de sistemas</label>
+          <input type="number" id="t-sys" name="systems_count" value="0" min="0">
+        </div>
+      </div>
+      <div class="campo-fila">
+        <div class="campo">
+          <label for="t-owner">Responsable</label>
+          <input type="text" id="t-owner" name="owner" placeholder="Infraestructura">
+        </div>
+        <div class="campo flex2">
+          <label for="t-cpe">Identificador estándar del producto (opcional)</label>
+          <input type="text" id="t-cpe" name="cpe" placeholder="cpe:2.3:a:postgresql:postgresql:15.4">
+          <div class="ayuda">Es el <abbr title="Common Platform Enumeration: nomenclatura estándar del NIST para nombrar productos de software">CPE</abbr>,
+            la forma normalizada con la que los avisos oficiales nombran un producto. Si lo
+            deja vacío, la tecnología se sigue detectando por sus alias; rellenarlo solo
+            afina la correspondencia con los avisos que lo publican.</div>
+        </div>
+      </div>
+      <div class="campo">
+        <label for="t-notes">Notas</label>
+        <input type="text" id="t-notes" name="notes">
+      </div>
+      <button class="btn primario" type="submit">Crear</button>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{# ========================================= 2. cuánto y cómo #}
+<div class="rejilla uno-dos">
+  {# dona por criticidad #}
+  <div class="panel" data-tour="3" data-tour-titulo="Importancia para el negocio" data-tour-texto="Reparto de las tecnologías por la criticidad declarada en su ficha. Pondera la prioridad de cada amenaza.">
+    <div class="panel-cabecera">
+      <h2>Criticidad del inventario</h2>
+      <span class="sub">¿Cuántas tecnologías son críticas para el negocio? Reparto de las {{ resumen.total }} tecnologías por criticidad declarada en la ficha.</span>
+    </div>
+    <div class="panel-cuerpo">
+      {{ graficos.dona(graf.criticidad, centro_valor=resumen.total, centro_etiqueta="tecnologías",
+                       aria="Reparto de las " ~ resumen.total ~ " tecnologías del inventario por criticidad") }}
+      <p class="pequeno suave mt-12">
+        La criticidad pondera la relevancia de cada amenaza: una vulnerabilidad media en una
+        tecnología crítica puede pesar más que una alta en una tecnología baja.
+      </p>
+    </div>
+  </div>
+
+  {# tecnologías con más amenazas #}
+  <div class="panel" data-tour="4" data-tour-titulo="Dónde se concentran los avisos" data-tour-texto="Las diez tecnologías con más amenazas en todo el histórico, repartidas en críticas, altas y medias (las bajas no se reportan, por regla interna). Pulse el nombre para abrir la ficha.">
+    <div class="panel-cabecera">
+      <h2>Tecnologías con más amenazas</h2>
+      <div class="panel-acciones">
+        <a class="btn pequeno" href="{{ url_for('amenazas.tendencias') }}">Ver tendencias</a>
+      </div>
+      <span class="sub">¿Qué tecnologías del inventario acumulan más amenazas en todo el histórico? Las diez primeras, apiladas por severidad. Pulse el nombre para abrir su ficha.</span>
+    </div>
+    <div class="panel-cuerpo">
+      {#
+        Qué suma la leyenda (auditoría de tableros del 2026-09-15, punto 8): sumaba solo
+        las diez barras dibujadas («Críticas 927, Altas 3.106, Medias 3.117») y repetía
+        las amenazas que mencionan dos tecnologías, así que no cuadraba con ninguna otra
+        cifra de la página. `leyenda_nota` lo escribe donde se lee.
+      #}
+      {{ graficos.barras_horizontales(graf.top, unidad=('amenaza', 'amenazas'), nombres={"critico": "Críticas", "alto": "Altas", "medio": "Medias", "bajo": "Bajas"},
+                                      alto_fila=26, max_etiqueta=32,
+                                      leyenda_nota="Suma de las " ~ (graf.top | length | numero) ~ " barras mostradas, no del inventario: una amenaza que menciona dos tecnologías cuenta en las dos.",
+                                      aria="Las diez tecnologías con más amenazas, apiladas por severidad") }}
+    </div>
+    <div class="panel-pie">
+      {% if top %}
+        Cada barra es una tecnología del inventario y su longitud, cuántas amenazas distintas la han
+        mencionado, repartidas en las tres severidades que se reportan: críticas, altas y medias. La nota «sin versión» marca las tecnologías cuyas
+        amenazas no se pueden confirmar ni descartar: complete la versión en la columna «Versión instalada».
+      {% else %}
+        Todavía no hay amenazas correlacionadas con el inventario: el gráfico se llenará con la primera recolección.
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# cobertura de versiones por categoría #}
+<div class="panel" data-tour="5" data-tour-titulo="Dónde falta información" data-tour-texto="Tecnologías con y sin versión registrada por categoría. Las que faltan se completan en la tabla o se rellenan solas desde OCS.">
+  <div class="panel-cabecera">
+    <h2>Cobertura de versiones por categoría</h2>
+    <span class="sub">¿Dónde falta completar el inventario? Tecnologías con y sin versión registrada, por categoría{% if graf.agrupadas %}. Las {{ graf.categorias | length - 1 }} categorías con más tecnologías van por separado; las {{ graf.agrupadas }} restantes se suman en la barra «Otras {{ graf.agrupadas }} categorías» y la tabla de debajo las detalla una a una{% endif %}.</span>
+  </div>
+  <div class="panel-cuerpo">
+    {{ graficos.barras_apiladas(graf.categorias, graf.series, ancho=1100, alto=240, categorico=True,
+                                aria="Tecnologías con y sin versión registrada por categoría") }}
+  </div>
+  {% if cobertura %}
+  <div class="panel-cuerpo sin-relleno borde-arriba">
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead>
+          <tr>
+            <th>Categoría</th><th class="num">Tecnologías</th>
+            <th class="num">Con versión</th><th class="num">Sin versión</th>
+            <th class="w-220">Cobertura</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for c in cobertura %}
+          <tr>
+            <td class="nowrap">{{ c.nombre }}</td>
+            <td class="num">{{ c.total | numero }}</td>
+            <td class="num {% if c.con_version %}txt-exito{% else %}tenue{% endif %}">{{ c.con_version | numero }}</td>
+            <td class="num {% if c.sin_version %}txt-medio{% else %}tenue{% endif %}">{{ c.sin_version | numero }}</td>
+            <td>
+              {{ graficos.barra_progreso([{"clave": "exito", "nombre": "Con versión", "valor": c.con_version},
+                                          {"clave": "medio", "nombre": "Sin versión", "valor": c.sin_version}],
+                                         leyenda=False, aria="Cobertura de versiones en " ~ c.nombre ~ ": " ~ c.con_version ~ " con versión y " ~ c.sin_version ~ " sin versión") }}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <td class="nowrap">Total de {{ cobertura | length | numero }} {{ 'categoría' if cobertura | length == 1 else 'categorías' }}</td>
+            <td class="num">{{ resumen.total | numero }}</td>
+            <td class="num {% if resumen.con_version %}txt-exito{% else %}tenue{% endif %}">{{ resumen.con_version | numero }}</td>
+            <td class="num {% if resumen.sin_version %}txt-medio{% else %}tenue{% endif %}">{{ resumen.sin_version | numero }}</td>
+            <td class="pequeno">{{ graficos.fmt(resumen.pct, 1) }} % con versión</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+  {% else %}
+  <div class="panel-pie">El inventario está vacío: no hay categorías que mostrar.</div>
+  {% endif %}
+</div>
+
+{# ================================================= 3. detalle en tabla #}
+<div class="panel" data-tour="6" data-tour-titulo="La tabla" data-tour-texto="La búsqueda filtra al escribir. «Sistemas» enlaza a los activos que tienen la tecnología. Eliminar borra la tecnología y sus correlaciones; para dejar de vigilarla sin perder el histórico, desmarque «Incluir en la correlación» en su ficha.">
+  <div class="panel-cabecera">
+    <h2>Tecnologías monitorizadas</h2>
+    <form method="get" class="filtros" data-filtro-vivo="tabla-tecnologias">
+      {% if sin_version %}<input type="hidden" name="sin_version" value="1">{% endif %}
+      <div class="campo">
+        <label for="filtro-q" class="oculto-visual">Buscar tecnología</label>
+        <input type="text" id="filtro-q" name="q" value="{{ filtro }}" placeholder="Buscar…">
+      </div>
+      <button class="btn pequeno" type="submit">Filtrar</button>
+      {% if filtro or sin_version %}
+        <a class="btn pequeno" href="{{ url_for('tecnologias.lista') }}">Limpiar</a>
+      {% endif %}
+    </form>
+    {#
+      El recuento y el número de páginas NO van aquí: la búsqueda en vivo sustituye
+      solo la zona «#tabla-tecnologias» y esta cabecera se quedaría con las cifras de
+      la búsqueda anterior (hallazgo del revisor, 2026-09-07). Los dice la paginación
+      del final de la tabla y el pie de la tabla, que sí están dentro de la zona.
+    #}
+    <span class="sub">{% if sin_version %}Solo las tecnologías sin versión registrada.{% else %}Todo el inventario, las críticas primero.{% endif %} La búsqueda se aplica mientras escribe y la lista viene por páginas de {{ por_pagina | numero }} tecnologías, con el recuento al final de la tabla. La versión se edita en línea y se aplica en la siguiente recolección.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno" id="tabla-tecnologias" tabindex="-1" data-zona-viva
+       data-zona-nombre="Tecnologías del inventario">
+    {% if filas %}
+    <div class="tabla-envoltorio">
+      <table>
+        <thead>
+          <tr>
+            <th>Tecnología</th><th>Categoría</th><th>Versión instalada</th>
+            <th title="Importancia de la tecnología para el negocio, declarada en la ficha">Criticidad</th>
+            <th title="Dónde está expuesta la tecnología: Internet, red perimetral o red interna">Exposición</th>
+            <th class="num" title="Activos con la tecnología según OCS Inventory; si no hay dato de OCS, el número registrado a mano">Sistemas</th><th class="num" title="Alias de detección activos (sin contar las exclusiones)">Alias</th>
+            <th class="num" title="Amenazas distintas correlacionadas con la tecnología en todo el histórico, contando solo las severidades que la organización reporta: la misma cifra que la ficha de la tecnología y que la gráfica de arriba">Amenazas</th>
+            {% if es_admin %}<th class="acciones"></th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+        {% for t in filas %}
+          <tr>
+            <td>
+              <a href="{{ url_for('tecnologias.detalle', tec_id=t.id) }}">{{ t.name }}</a>
+              {% if not t.enabled %}<span class="insignia neutra">inactiva</span>{% endif %}
+              {% if t.vendor %}<div class="pequeno tenue">{{ t.vendor | recortar(34) }}</div>{% endif %}
+            </td>
+            <td class="pequeno nowrap">{{ t.categoria_es }}</td>
+            {# El perfil «Solo lectura» ve la versión, no el formulario: de esta versión
+               depende el veredicto de aplicabilidad de todo el parque (2026-09-07). #}
+            <td class="minw-150">
+              {% if es_admin %}
+              <form method="post" action="{{ url_for('tecnologias.version_rapida', tec_id=t.id) }}"
+                    class="flex-4"
+                    data-accion-viva="pagina-tecnologias" data-accion-espera="Guardando…">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <label for="version-{{ t.id }}" class="oculto-visual">Versión instalada de {{ t.name }}</label>
+                <input class="mono p-3-6-12" type="text" id="version-{{ t.id }}" name="version_installed"
+                       value="{{ t.version_installed or '' }}" placeholder="sin registrar">
+                <button class="btn pequeno" type="submit" title="Guardar versión" aria-label="Guardar versión">✓</button>
+              </form>
+              {% else %}
+              <span class="mono pequeno">{{ t.version_installed or '—' }}</span>
+              {% if not t.version_installed %}<div class="pequeno tenue">sin registrar</div>{% endif %}
+              {% endif %}
+            </td>
+            <td><span class="insignia {{ t.criticality }}">{{ t.criticidad_es }}</span></td>
+            <td class="pequeno nowrap">
+              {% if t.exposure == 'internet' %}
+                <span class="txt-critico-b">{{ t.exposicion_es }}</span>
+              {% else %}{{ t.exposicion_es }}{% endif %}
+            </td>
+            <td class="num">{% if t.activos_ocs %}<a href="{{ url_for('activos.lista', tec=t.id) }}" title="Activos con esta tecnología según OCS Inventory">{{ t.activos_ocs | numero }}</a>{% elif t.systems_count %}{{ t.systems_count | numero }}{% else %}—{% endif %}</td>
+            <td class="num">{{ t.n_alias | numero }}</td>
+            <td class="num">{{ t.n_amenazas | numero }}</td>
+            {% if es_admin %}
+            <td class="acciones nowrap">
+              <form method="post" action="{{ url_for('tecnologias.borrar', tec_id=t.id) }}"
+                    data-confirm="¿Eliminar {{ t.name }} del inventario? Se perderán {{ t.n_amenazas }} correlaciones con amenazas (las amenazas se conservan). Esta acción no se puede deshacer. Si solo quiere dejar de correlacionarla, abra la ficha y desmarque «Incluir en la correlación»."
+                    data-accion-viva="pagina-tecnologias" data-accion-espera="Borrando…">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <button class="btn pequeno peligro" type="submit" title="Eliminar del inventario">Eliminar</button>
+              </form>
+            </td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+        </tbody>
+        {#
+          El pie ya no suma «Sistemas» ni «Amenazas» (auditoría de tableros del
+          2026-09-15, punto 4): sumar la primera contaba el mismo activo una vez por cada
+          tecnología instalada (22.236 «sistemas» en un parque de 730 máquinas) y ni
+          siquiera sumaba la columna que se ve; sumar la segunda daba 8.363, más amenazas
+          que las que tiene el catálogo entero, porque una amenaza que menciona cuatro
+          tecnologías se contaba cuatro veces. Ahora las dos cifras son recuentos
+          DISTINTOS y la nota de debajo dice qué relación tienen con las columnas.
+        #}
+        <tfoot>
+          <tr>
+            <td class="nowrap">{{ total_filtradas | numero }} tecnología{{ 's' if total_filtradas != 1 }}{% if filtro or sin_version %} de {{ resumen.total | numero }}{% endif %}</td>
+            <td colspan="2" class="pequeno">{{ sumas.con_version | numero }} con versión registrada</td>
+            <td colspan="2"></td>
+            <td class="num nowrap"><a href="{{ url_for('activos.lista') }}" title="Activos distintos del parque que tienen instalada alguna de estas tecnologías. No es la suma de la columna: un activo con veinte tecnologías se contaría veinte veces">{{ sumas.activos | numero }}</a></td>
+            <td class="num">{{ sumas.alias | numero }}</td>
+            <td class="num nowrap" title="Amenazas distintas que mencionan alguna de estas tecnologías. La suma de la columna es mayor porque una amenaza que menciona varias tecnologías cuenta en todas ellas">{{ sumas.amenazas_distintas | numero }}</td>
+            {% if es_admin %}<td></td>{% endif %}
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+    {{ paginacion('tecnologias.lista', args, pagina, paginas, total_filtradas, por_pagina,
+                  singular='tecnología', plural='tecnologías', ancla='tabla-tecnologias', zona='tabla-tecnologias',
+                  titulo='Paginación del inventario de tecnologías') }}
+    {% else %}
+    <div class="vacio">
+      <p>{% if filtro %}Ningún resultado para «{{ filtro }}».{% elif sin_version %}Todas las tecnologías tienen versión registrada.{% else %}El inventario está vacío.{% endif %}</p>
+      {% if es_admin and not filtro and not sin_version %}
+      <p class="pequeno">Use «Cargar inventario base» para partir de la lista
+         depurada de tecnologías.</p>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+  {% if filas %}
+  <div class="panel-pie">
+    <strong>Las dos cifras de la última fila no son sumas.</strong>
+    «Sistemas»: <a href="{{ url_for('activos.lista') }}">{{ sumas.activos | numero }}
+    {{ 'activo' if sumas.activos == 1 else 'activos' }}</a> del parque
+    {%- if not (filtro or sin_version) %} (de {{ activos_parque | numero }} presentes){% endif %}
+    tienen instalada alguna de estas tecnologías; sumar la columna contaría el mismo
+    activo una vez por cada tecnología que tiene.
+    «Amenazas»: <strong>{{ sumas.amenazas_distintas | numero }} amenazas distintas</strong>
+    mencionan alguna de ellas (la suma de la columna, {{ sumas.amenazas | numero }},
+    repite las que mencionan varias tecnologías).
+    {%- if sin_bajas %} Se cuentan las severidades que la organización reporta, las mismas
+    que <a href="{{ url_for('amenazas.lista') }}">Amenazas</a> y que la gráfica de arriba.{% endif %}
+    <br>
+    La versión se puede editar en línea; los cambios se aplican en la siguiente
+    recolección. <strong>Eliminar</strong> borra la tecnología y sus correlaciones
+    históricas (las amenazas se conservan). Si solo ha dejado de usarla y quiere
+    conservar el histórico, abra la ficha y desmarque «Incluir en la correlación»:
+    dejará de generar hallazgos sin perder lo ya registrado.
+  </div>
+  {% endif %}
+</div>
+</div>{# fin de la zona viva #}
+{% endblock %}

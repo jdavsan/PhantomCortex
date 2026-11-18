@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% block titulo %}Sincronización del inventario{% endblock %}
+{% block contenido %}
+{% from "_paginacion.html" import paginacion %}
+{#
+  Cuándo se ejecutó la consulta a cada una de las dos bases de OCS Inventory y qué leyó.
+  Todo sale de la tabla `sync_ocs`: una fila por base y por intento. Es una página de
+  consulta; la sincronización a demanda sigue en Activos. Sin style= ni on*= (CSP).
+#}
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Sincronización del inventario" data-tour-texto="Cada mañana la plataforma sincroniza las fuentes de inventario configuradas (OCS Inventory, CSV, u otras). Aquí se ve a qué hora se ejecutó cada sincronización, cuánto tardó, cuántas máquinas y programas leyó y si falló. De estos datos depende todo lo demás: sin inventario fresco no se puede decidir qué vulnerabilidad afecta a qué máquina.">
+  <div>
+    <h1>Sincronización del inventario</h1>
+    <p>Fecha y hora de cada sincronización de las fuentes de inventario configuradas, con lo que leyó y cuánto tardó.
+       La plataforma solo lee: nunca escribe nada en las fuentes de inventario.</p>
+  </div>
+  <div class="acciones-titulo">
+    <a class="btn" href="{{ url_for('activos.lista') }}">Ver activos</a>
+    <a class="btn" href="{{ url_for('panel.auditoria') }}">Ver auditoría</a>
+  </div>
+</div>
+
+{# ===================================================== 1. aviso si el inventario está viejo #}
+{% set viejas = resumen | selectattr('vieja') | list %}
+{% if viejas %}
+<div class="aviso aviso-nivel" role="status">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+  <div><strong>Hay inventario sin actualizar.</strong>
+    {% for r in viejas %}{{ r.origen_es }}{% if r.horas is not none %}: última consulta correcta hace
+      {{ graficos.fmt(r.horas, 1) }} horas{% else %}: sin ninguna consulta correcta registrada{% endif %}.
+    {% endfor %}
+    La alerta de las 08:00 se apoya en la consulta de las 07:30; por encima de
+    {{ horas_viejo }} horas conviene revisar el registro de abajo y el de la ejecución diaria.</div>
+</div>
+{% endif %}
+
+{# ===================================================== 2. una tarjeta por base #}
+<div class="rejilla c2" data-tour="2" data-tour-titulo="La última consulta de cada base" data-tour-texto="Son dos bases de datos distintas y se consultan por separado, así que una puede funcionar y la otra no. Aquí se ve la última consulta de cada una: cuándo empezó, cuándo terminó, cuánto tardó y qué leyó.">
+  {% for r in resumen %}
+  <div class="panel">
+    <div class="panel-cabecera">
+      <h2>{{ r.origen_es }}</h2>
+      {% if r.ultima %}
+      <div class="panel-acciones">
+        <span class="insignia {{ r.ultima.estado_insignia }}">{{ r.ultima.estado_es }}</span>
+      </div>
+      {% endif %}
+      <span class="sub">{% if r.origen == 'servidores' %}Base de OCS de los servidores.
+        {% else %}Base de OCS de los equipos de cómputo.{% endif %}</span>
+    </div>
+    <div class="panel-cuerpo">
+      {% if r.ultima %}
+      <dl class="detalle-lista">
+        <dt>Última consulta</dt>
+        <dd>{{ r.ultima.started_at | fecha_es(con_hora=True) }}
+          <span class="pequeno suave">({{ r.ultima.started_at | hace }})</span></dd>
+        {% if r.ultima.fin %}
+        <dt>Terminó</dt>
+        <dd>{{ r.ultima.fin | fecha_es(con_hora=True) }}
+          <span class="pequeno suave">{{ graficos.fmt(r.ultima.segundos, 1) }} segundos</span></dd>
+        {% endif %}
+        {% if r.ultima.status == 'success' %}
+        <dt>Leyó</dt>
+        <dd>{{ r.ultima.activos | numero }} máquinas y {{ r.ultima.software | numero }} programas
+          <div class="pequeno suave">{{ r.ultima.nuevos | numero }} máquinas nuevas,
+            {{ r.ultima.cambiados | numero }} con cambios,
+            {{ r.ultima.desaparecidos | numero }} que ya no aparecen en OCS</div></dd>
+        {% elif r.ultima.status == 'failed' %}
+        <dt>Error</dt>
+        {# Revisión de claridad del 2026-09-15: aquí se veía la excepción cruda del motor
+           de base de datos. Ahora se lee la causa y qué hacer, con el texto original
+           dentro del desplegable «Detalle técnico». #}
+        <dd><div class="pequeno envolver">{{ r.ultima.error | error_consulta_es }}</div>
+          {% if r.ultima_ok %}<div class="pequeno suave">Se conserva el inventario de la última
+            consulta correcta: {{ r.ultima_ok.started_at | fecha_es(con_hora=True) }}.</div>{% endif %}</dd>
+        {% else %}
+        <dt>En curso</dt>
+        <dd>{% if r.ultima.colgada %}<span class="txt-critico-b">Lleva más de treinta minutos: es
+            probable que la ejecución muriera a medias.</span>
+          {% else %}Empezó hace {{ graficos.fmt(r.ultima.segundos, 0) }} segundos.{% endif %}</dd>
+        {% endif %}
+        <dt>Últimos treinta días</dt>
+        <dd>{{ r.intentos_30d | numero }} consulta{{ 's' if r.intentos_30d != 1 }},
+          {% if r.fallidas_30d %}<span class="txt-critico-b">{{ r.fallidas_30d | numero }}
+            fallida{{ 's' if r.fallidas_30d != 1 }}</span>{% else %}ninguna fallida{% endif %}
+          <div class="pequeno suave">Duración media: {{ graficos.fmt(r.media_segundos, 1) }} segundos.</div></dd>
+      </dl>
+      {% else %}
+      <div class="vacio sin-icono">
+        <p>Todavía no se ha consultado esta base.</p>
+        <p class="pequeno">La primera consulta se hará en la próxima ejecución diaria, o al pulsar
+          «Actualizar inventario ahora» en <a href="{{ url_for('activos.lista') }}">Activos</a>.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{# ===================================================== 3. horario y conexión #}
+<div class="rejilla c2">
+  <div class="panel" data-tour="3" data-tour-titulo="Cuándo se ejecuta" data-tour-texto="El horario se lee del programador de tareas del servidor, no de una constante del código: si alguien cambia la hora, esta página lo refleja. La consulta va a las 07:30 y la alerta a las 08:00, para que el correo salga a las ocho en punto.">
+    <div class="panel-cabecera">
+      <h2>Cuándo se ejecuta</h2>
+      <span class="sub">Horario real del programador de tareas del servidor, no un valor escrito
+        en la interfaz. Las horas son de la zona del servidor.</span>
+    </div>
+    <div class="panel-cuerpo">
+      {% if programado.horario %}
+      <dl class="detalle-lista">
+        {# Revisión de claridad del 2026-09-15: debajo de cada hora se pintaba la orden
+           del servidor tal cual («ejecucion_diaria.py --sin-alerta»). Ningún nombre de
+           fichero ni orden del servidor sale a la interfaz: queda lo que hace, en
+           palabras, que es lo que la persona necesita saber. #}
+        {% for h in programado.horario %}
+        <dt>{{ h.hora }}</dt>
+        <dd>{{ h.que_hace }}</dd>
+        {% endfor %}
+      </dl>
+      <p class="pequeno suave mt-12">La consulta a OCS va antes que la alerta a propósito: el
+        correo de las 08:00 se apoya en el inventario leído a las 07:30, así sale a las ocho en
+        punto en lugar de esperar a que termine todo el trabajo.</p>
+      <p class="pequeno tenue">Horario leído del programador
+        {{ programado.leido_at | hace }}, en la ejecución de ese día. La interfaz no puede
+        consultarlo por sí misma: su servicio está endurecido para no tomar privilegios
+        adicionales, así que lo registra la propia ejecución programada.</p>
+      {% else %}
+      <p class="pequeno suave">Todavía no hay horario registrado. Lo anota la ejecución
+        programada la primera vez que se ejecuta; si necesita saberlo antes, consúltelo con
+        Redes, que es quien mantiene el programador de tareas.</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="panel" data-tour="4" data-tour-titulo="A qué base se conecta" data-tour-texto="Servidor, puerto, base y usuario de cada OCS Inventory. La contraseña vive en el almacén de credenciales del servidor, solo legible por la aplicación, y no sale nunca de ahí: no se muestra aquí ni se escribe en los registros. El usuario con el que se consulta solo puede leer, nunca escribir.">
+    <div class="panel-cabecera">
+      <h2>A qué base se conecta</h2>
+      <span class="sub">Dos bases de datos distintas. La contraseña no se muestra aquí ni aparece
+        en los registros: vive solo en el almacén de credenciales del servidor.</span>
+    </div>
+    <div class="panel-cuerpo sin-relleno">
+      <div class="tabla-envoltorio">
+        <table class="tabla-compacta">
+          <thead><tr><th>Origen</th><th>Servidor</th><th>Base de datos</th><th>Usuario</th></tr></thead>
+          <tbody>
+          {% for c in conexiones %}
+            <tr>
+              <td>{{ c.origen_es }}</td>
+              <td class="mono pequeno">{{ c.servidor }}:{{ c.puerto }}</td>
+              <td class="mono pequeno">{{ c.base }}</td>
+              <td class="mono pequeno">{{ c.usuario }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="panel-pie">
+      De cada base se leen tres cosas: las máquinas con su sistema operativo, los programas
+      instalados en cada una y la etiqueta que las clasifica (el proceso de negocio y el
+      entorno). Solo lectura.
+    </div>
+  </div>
+</div>
+
+{# ===================================================== 4. histórico #}
+<div class="panel">
+  <div class="panel-cabecera">
+    <h2>Registro de consultas</h2>
+    <form method="get" class="filtros" action="{{ url_for('sincronizaciones.lista') }}" data-filtro-vivo="tabla-sincronizaciones">
+      <div class="campo">
+        <label for="origen">Base de datos</label>
+        <select id="origen" name="origen">
+          <option value="">Las dos</option>
+          {% for o in origenes %}<option value="{{ o }}"{% if origen == o %} selected{% endif %}>{{ origen_es.get(o, o) }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="estado">Resultado</label>
+        <select id="estado" name="estado">
+          <option value="">Todos</option>
+          {% for clave, texto in estados.items() %}<option value="{{ clave }}"{% if estado == clave %} selected{% endif %}>{{ texto }}</option>{% endfor %}
+        </select>
+      </div>
+      <button class="btn pequeno" type="submit">Filtrar</button>
+      {% if origen or estado %}<a class="btn pequeno" href="{{ url_for('sincronizaciones.lista') }}">Quitar filtros</a>{% endif %}
+    </form>
+    <span class="sub" data-tour="5" data-tour-titulo="Una fila por consulta" data-tour-texto="Cada fila es una consulta a una de las dos bases: la fecha y la hora en que empezó, cuánto tardó, cuántas máquinas y programas leyó y, si falló, qué pasó y qué hacer. El texto original del error queda plegado en «Detalle técnico».">
+      {{ total | numero }} consulta{{ 's' if total != 1 }} registrada{{ 's' if total != 1 }}{% if origen or estado %} con estos filtros{% endif %}.
+      {% if fallidas_total %}{{ fallidas_total | numero }} fallida{{ 's' if fallidas_total != 1 }} en total.{% endif %}</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno" id="tabla-sincronizaciones" tabindex="-1" data-zona-viva
+       data-zona-nombre="Sincronización del inventario">
+    {% if filas %}
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead>
+          <tr>
+            <th>Fecha y hora</th><th>Base de datos</th><th>Resultado</th>
+            <th class="num">Segundos</th><th class="num">Activos</th><th class="num">Programas</th>
+            <th class="num" title="Activos que no estaban en la consulta anterior">Nuevos</th>
+            <th class="num" title="Activos cuyo software o sistema operativo cambió">Con cambios</th>
+            <th class="num" title="Activos que ya no aparecen en OCS Inventory: quedan marcados como ausentes, no se borran">Ausentes</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for f in filas %}
+          <tr>
+            <td class="nowrap">{{ f.started_at | fecha_es(con_hora=True) }}
+              <div class="pequeno tenue">{{ f.started_at | hace }}</div></td>
+            <td class="pequeno nowrap">{{ f.origen_es }}</td>
+            <td class="pequeno">
+              <span class="insignia {{ f.estado_insignia }}">{{ f.estado_es }}</span>
+              {% if f.status == 'failed' %}<div class="pequeno envolver">{{ f.error | error_consulta_es }}</div>{% endif %}
+              {% if f.colgada %}<div class="pequeno envolver txt-critico-b">Lleva más de treinta minutos «en curso»: la ejecución murió a medias.</div>{% endif %}
+            </td>
+            <td class="num">{% if f.status == 'success' %}{{ graficos.fmt(f.segundos, 1) }}{% else %}<span class="tenue">—</span>{% endif %}</td>
+            <td class="num">{% if f.status == 'success' %}{{ f.activos | numero }}{% else %}<span class="tenue">—</span>{% endif %}</td>
+            <td class="num">{% if f.status == 'success' %}{{ f.software | numero }}{% else %}<span class="tenue">—</span>{% endif %}</td>
+            <td class="num">{% if f.status == 'success' %}{{ f.nuevos | numero }}{% else %}<span class="tenue">—</span>{% endif %}</td>
+            <td class="num">{% if f.status == 'success' %}{{ f.cambiados | numero }}{% else %}<span class="tenue">—</span>{% endif %}</td>
+            <td class="num">{% if f.status == 'success' %}{{ f.desaparecidos | numero }}{% else %}<span class="tenue">—</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {{ paginacion('sincronizaciones.lista', args, pagina, paginas, total, por_pagina,
+                  singular='consulta', plural='consultas', ancla='tabla-sincronizaciones', zona='tabla-sincronizaciones',
+                  titulo='Paginación del registro de consultas') }}
+    {% else %}
+    <div class="vacio">
+      <p>{% if origen or estado %}Ninguna consulta coincide con los filtros.{% else %}Todavía no hay ninguna consulta registrada.{% endif %}</p>
+      {% if not origen and not estado %}<p class="pequeno">La primera se registrará en la próxima ejecución de las 07:30.</p>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+  <div class="panel-pie">
+    «Ausentes» son máquinas que dejaron de aparecer en OCS: quedan marcadas como no presentes y
+    se conservan con su histórico, no se borran. Un activo que sigue en OCS Inventory pero no
+    reporta desde hace más de treinta días aparece como «sin reportar» en
+    <a href="{{ url_for('activos.lista') }}">Activos</a>.
+  </div>
+</div>
+{% endblock %}

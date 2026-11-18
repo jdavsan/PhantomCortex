@@ -1,0 +1,111 @@
+{# Seccion del correo de alerta: correcciones que ya estan disponibles (v7). Recibe
+   ``parches_nuevos`` de threatintel.parches.novedades, directamente o dentro de ``meta``,
+   de modo que en alerta.html basta con {% include "_parches_nuevos.html" %}. Si no hay
+   novedades no se pinta nada. Estilo en linea a proposito: los clientes de correo no
+   admiten hojas de estilo.
+
+   La tabla se recorta a ``tope_parches`` filas (15 por omision, threatintel.parches.TOPE_CORREO):
+   si una publicacion de la distribucion resolviera de golpe cientos de filas, la seccion
+   pasaria de 5 KB a mas de 300 KB, y Gmail y Outlook recortan los mensajes de mas de unos
+   102 KB, escondiendo el resto de la alerta tras «Ver el mensaje completo». El total sigue
+   diciendose con todas las letras y la ultima fila remite a la plataforma. #}
+{% set parches_lista = (parches_nuevos if parches_nuevos is defined and parches_nuevos
+                        else (meta.parches_nuevos if meta is defined and meta else [])) %}
+{% if parches_lista %}
+{% set parches_tope = tope_parches | default(15) %}
+{% set parches_visibles = parches_lista[:parches_tope] %}
+{% set parches_resto = parches_lista | length - parches_visibles | length %}
+{# En cuántos activos se puede aplicar: la suma de los activos de cada corrección
+   (2026-09-10). Sin esta cifra el aviso decía «6 correcciones publicadas» y no decía
+   dónde hay que aplicarlas, que es lo que hace falta para programar la ventana. Un
+   activo que aparece en dos correcciones cuenta en las dos: son dos actualizaciones. #}
+{% set parches_activos = parches_lista | map(attribute='n_activos') | select | sum %}
+{% set parches_expuestos = parches_lista | map(attribute='n_activos_expuestos') | select | sum %}
+<div style="font-family:Arial,Helvetica,sans-serif; font-size:12px; font-weight:bold;
+            color:#4a5563; text-transform:uppercase; letter-spacing:.04em;
+            margin:0 0 8px 0;">
+  Ya se puede aplicar: correcciones publicadas
+</div>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 10px 0; background-color:#e8f5ee; border-left:4px solid #1e7e46;">
+  <tr>
+    <td style="padding:13px 16px; font-family:Arial,Helvetica,sans-serif;
+               font-size:13px; color:#155d34; line-height:1.55;">
+      <strong style="font-size:14px;">{{ parches_lista|length|numero }}{{ ' ' }}
+        {%- if parches_lista|length == 1 %}corrección publicada{% else %}correcciones publicadas{% endif %}
+        {%- if parches_activos %} · se {% if parches_lista|length == 1 %}puede{% else %}pueden{% endif %}
+        aplicar en {{ parches_activos|numero }}{{ ' ' }}
+        {%- if parches_activos == 1 %}activo{% else %}activos{% endif %}{% endif %}</strong><br>
+      Estas vulnerabilidades llevaban tiempo confirmadas en activos de la organización sin que
+      existiera una versión que las corrigiera. La corrección ya se ha publicado: <strong>esto sí
+      se puede hacer hoy</strong>, se puede programar la actualización.
+      {% if parches_expuestos %}<br>De esos activos, {{ parches_expuestos|numero }}
+      {% if parches_expuestos == 1 %}está{% else %}están{% endif %} en producción o
+      contingencia: son los primeros.{% endif %}
+      {% if parches_activos %}<br>La cifra de activos suma los de cada corrección: un mismo
+      activo que necesite dos de ellas cuenta dos veces, porque son dos actualizaciones.{% endif %}
+    </td>
+  </tr>
+</table>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 24px 0; border:1px solid #e3e7ec; border-collapse:collapse;">
+  <tr style="background-color:#f2f4f7;">
+    {% for cabecera, ancho, alineacion in [
+        ('Vulnerabilidad', '34%', 'left'), ('Paquete', '14%', 'left'),
+        ('Sistema', '12%', 'left'), ('Versión que corrige', '15%', 'left'),
+        ('Aviso', '10%', 'left'), ('Días en espera', '8%', 'center'),
+        ('Activos afectados', '7%', 'center')] %}
+    <th align="{{ alineacion }}" width="{{ ancho }}"
+        style="padding:8px 10px; font-family:Arial,Helvetica,sans-serif;
+               font-size:11px; font-weight:bold; color:#63707e;
+               text-transform:uppercase; letter-spacing:.04em;
+               border-bottom:1px solid #d8dce2;">{{ cabecera }}</th>
+    {% endfor %}
+  </tr>
+  {% for p in parches_visibles %}
+  {% set color = {'Critical':'#b3261e','High':'#c05621','Medium':'#8a6d0b','Low':'#2b6cb0'}.get(p.severidad,'#63707e') %}
+  <tr style="background-color:{{ '#ffffff' if loop.index0 % 2 == 0 else '#fafbfc' }};">
+    <td style="padding:8px 10px; font-family:Arial,Helvetica,sans-serif; font-size:12px;
+               color:#2b3540; border-bottom:1px solid #eef0f3; line-height:1.45;">
+      {{ (p.titulo or p.cve)|recortar(78) }}
+      <div style="font-size:11px; color:#8a939f; font-family:Consolas,monospace; margin-top:2px;">
+        {{ p.cve }}{% if p.severidad %} · <span style="color:{{ color }}; font-weight:bold;">{{ p.severidad|severidad_texto }}</span>{% endif %}{% if p.in_kev %} · KEV{% endif %}
+      </div>
+    </td>
+    <td style="padding:8px 10px; font-family:Consolas,monospace; font-size:12px;
+               color:#2b3540; border-bottom:1px solid #eef0f3;">{{ p.paquete }}</td>
+    <td style="padding:8px 10px; font-family:Arial,Helvetica,sans-serif; font-size:12px;
+               color:#4a5563; border-bottom:1px solid #eef0f3;">{{ p.sistema }}</td>
+    <td style="padding:8px 10px; font-family:Consolas,monospace; font-size:12px;
+               color:#155d34; font-weight:bold; border-bottom:1px solid #eef0f3;">{{ p.version_corregida }}</td>
+    <td style="padding:8px 10px; font-family:Arial,Helvetica,sans-serif; font-size:12px;
+               color:#4a5563; border-bottom:1px solid #eef0f3;">
+      {% if p.aviso %}{{ p.aviso }}{% else %}<span style="color:#a8b1bb;">sin aviso con identificador</span>{% endif %}</td>
+    <td align="center" style="padding:8px 10px; font-family:Arial,Helvetica,sans-serif;
+               font-size:12px; color:#4a5563; border-bottom:1px solid #eef0f3;
+               white-space:nowrap;">{{ p.dias_en_espera|numero }}</td>
+    <td align="center" style="padding:8px 10px; font-family:Arial,Helvetica,sans-serif;
+               font-size:12px; color:#2b3540; border-bottom:1px solid #eef0f3;">
+      {{ p.n_activos|numero }}
+      {% if p.n_activos_expuestos %}
+      <div style="font-size:11px; color:#b3261e;">{{ p.n_activos_expuestos|numero }} en producción o contingencia</div>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  {% if parches_resto > 0 %}
+  <tr>
+    <td colspan="7" style="padding:10px; font-family:Arial,Helvetica,sans-serif; font-size:12px;
+               color:#4a5563; background-color:#f7f8fa; border-top:1px solid #d8dce2;
+               line-height:1.5;">
+      {% if parches_resto == 1 %}Hay una corrección más{% else %}Hay {{ parches_resto|numero }} correcciones más{% endif %}
+      que también acaban de publicarse. La tabla se limita a {{ parches_tope|numero }} filas para
+      que el mensaje no llegue recortado: la lista completa está en la página «Correcciones
+      pendientes» de la plataforma, en la lista «Ya disponibles».
+    </td>
+  </tr>
+  {% endif %}
+</table>
+{% endif %}

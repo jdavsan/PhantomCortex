@@ -1,0 +1,1860 @@
+/* ===================================================================
+   Tipografía: Fira Sans (texto) y Fira Code (datos), pareja recomendada por la
+   habilidad ui-ux-pro-max para paneles de datos densos. Alojadas en local
+   (webui/static/fonts, licencia OFL) porque la CSP no admite recursos externos.
+   =================================================================== */
+@font-face { font-family: "Fira Sans"; font-style: normal; font-weight: 400; font-display: swap;
+  src: url("fonts/fira-sans-400-latin.woff2") format("woff2"); }
+@font-face { font-family: "Fira Sans"; font-style: normal; font-weight: 500; font-display: swap;
+  src: url("fonts/fira-sans-500-latin.woff2") format("woff2"); }
+@font-face { font-family: "Fira Sans"; font-style: normal; font-weight: 600; font-display: swap;
+  src: url("fonts/fira-sans-600-latin.woff2") format("woff2"); }
+@font-face { font-family: "Fira Code"; font-style: normal; font-weight: 400 500; font-display: swap;
+  src: url("fonts/fira-code-400-latin.woff2") format("woff2"); }
+
+/* ===================================================================
+   Interfaz de administracion - Sistema de Inteligencia de Amenazas
+   Hoja de estilos unica. Sin dependencias externas: la CSP no permite
+   recursos remotos ni style="" en linea. Especificacion de referencia:
+   docs/DISENO_INTERFAZ_2026-09-03.md (secciones 2-5).
+
+   Indice
+     1. Paleta (claro en :root; oscuro en dos selectores)
+     2. Base y tipografia
+     3. Estructura: cabecera, navegacion, tema, pie
+     4. Paneles, rejillas y metricas
+     5. Tablas, insignias, puntos, chips
+     6. Botones, formularios, avisos, estado vacio
+     7. Contrato CSS de graficos SVG (webui/graficos.py)
+     8. Login y error
+     9. Utilidades (sustituyen a style="")
+    10. Responsivo e impresion
+   =================================================================== */
+
+/* ------------------------------------------------------------------
+   1. Paleta
+   ------------------------------------------------------------------ */
+:root {
+  color-scheme: light dark;
+  /* Paleta viva (2026-09-08, peticion del usuario: «se ven muy opacos y necesito algo
+     vivo»): acento azul saturado, semanticos en tonos plenos (rojo, naranja, ambar, azul,
+     verde) y fondos apenas tintados de azul en vez de gris. Cada token de TEXTO mantiene
+     >= 4,5:1 sobre --fondo-panel, --fondo y su *-fondo, y cada relleno >= 3:1, en los dos
+     temas: lo comprueba el guion de contraste y las pruebas de paleta. Copia anterior:
+     backups/estilo_pre_vivo_2026-09-08.css. Rojo y naranja subidos de tono el mismo dia
+     a peticion del usuario: el texto semantico usa el rojo #d11f1f, el naranja #c2410c y el
+     ambar #946000 sobre fondos casi blancos (#fef2f2, #fff4eb, #fffbeb), lo mas vivo que
+     admite el 4,5:1. El rojo se subio otra vez a peticion del usuario: #d81b1b en texto y
+     #e41b1b en rellenos (mas saturado, con menos verde y azul). */
+
+  --fondo: #eef2f9;
+  --fondo-panel: #ffffff;
+  --fondo-alt: #f5f8fd;
+  --fondo-hover: #e7eefb;
+  --borde: #d3deef;
+  --borde-fuerte: #aebfd9;
+  --texto: #0b1a33;
+  --texto-suave: #3a4b64;
+  --texto-tenue: #52657f;
+  --acento: #1d4ed8;
+  --acento-claro: #dbe6ff;
+  --acento-hover: #1e40af;
+  --secundario: #0e7490;
+  --secundario-claro: #cff3fa;
+
+  --critico: #e41b1b;
+  --critico-fondo: #fef2f2;
+  --alto: #ea580c;
+  --alto-fondo: #fff4eb;
+  /* Oscurecido el 2026-09-09: con #d97706 la diferencia con --alto (#ea580c) era de
+     1,12:1 y dos barras contiguas «Altas» y «Medias» se leian como una sola. Ahora
+     1,60:1 entre ambos, 5,69:1 sobre el panel (#ffffff), 5,07:1 sobre el fondo de pagina
+     (#eef2f9) y 5,48:1 sobre su propio fondo de insignia (#fffbeb). */
+  --medio: #a54e08;
+  --medio-fondo: #fffbeb;
+  --bajo: #2563eb;
+  --bajo-fondo: #dbeafe;
+  --exito: #16a34a;
+  --exito-fondo: #dcfce7;
+  --neutro: #6b7280;
+  --kev: #991b1b;
+
+  /* Tokens de TEXTO semantico, separados del relleno grafico (--critico,
+     --alto...). Los rellenos de barras/series conservan su tono; el texto
+     (insignias, valores de metrica, .txt-*, avisos, chips) usa estos, que
+     garantizan >= 4,5:1 sobre --fondo-panel y sobre su *-fondo. */
+  --critico-texto: #d81b1b;
+  --alto-texto: #c2410c;
+  --medio-texto: #946000;
+  --bajo-texto: #1d4ed8;
+  --exito-texto: #166534;
+  --secundario-texto: #155e75;
+
+  /* Paleta categórica (repartos sin significado propio: sistemas, entornos, categorías
+     de fuente). Doce colores vivos y saturados, con distancia perceptual >= 25 entre
+     cualquier par y contraste >= 3:1 sobre el fondo, en claro y en oscuro; «sin datos»
+     siempre en gris. Petición del usuario (2026-09-05): vivos y con contraste, nada pálido.
+     Los cuatro últimos (cat-9..cat-12) se añadieron el 2026-09-08 para que la gráfica de
+     versiones de sistema dé un color distinto a cada una de sus doce barras. */
+  --cat-1: #1d5fbf;  /* azul */
+  --cat-2: #0891b2;  /* cian */
+  --cat-3: #e0700f;  /* naranja */
+  --cat-4: #7c3aed;  /* violeta */
+  --cat-5: #65a30d;  /* lima */
+  --cat-6: #c2185b;  /* magenta */
+  --cat-7: #b8860b;  /* dorado */
+  --cat-8: #0f9d58;  /* esmeralda */
+  --cat-9: #7a3e12;  /* marrón */
+  --cat-10: #6d1b7b;  /* ciruela */
+  --cat-11: #0d9488;  /* verde azulado */
+  --cat-12: #5b5a17;  /* oliva */
+
+  /* Texto sobre superficies solidas de acento/kev: blanco en claro,
+     fondo oscuro en oscuro (los tonos claros del tema oscuro no dan
+     contraste suficiente con texto blanco). */
+  --texto-sobre-acento: #ffffff;
+  --texto-sobre-kev: #ffffff;
+
+  /* Medida de lectura de los textos largos de la interfaz (2026-09-10). Peticion
+     literal del usuario: «los textos de introduccion se quedan a la izquierda y
+     desperdician el espacio... sube el limite a algo razonable para este ancho (del orden
+     de 110 a 120 caracteres)». Antes la introduccion de pagina estaba atada a 78ch (566
+     px de los 1.145 disponibles a 1.440 px de ventana: 49 % del ancho, con una franja
+     muerta de 579 px) mientras que .sub y .ayuda no tenian limite ninguno y llegaban a
+     154 caracteres por linea. Con un solo token los dos casos quedan en la misma medida:
+     110 caracteres (~798 px a 13 px de tipo). Es el limite mas bajo del rango que pidio
+     el usuario, que es lo mas cerca que se puede quedar de la recomendacion de la
+     habilidad ui-ux-pro-max (regla «Line Length»: 65-75 caracteres, «no texto a todo el
+     ancho en pantallas grandes»). Se aplica tal cual, sin envolverlo en min(100%, ...):
+     un porcentaje dentro de min() deja de contar cuando el navegador calcula el ancho
+     «natural» de un elemento flexible, y entonces el bloque del titulo pedia el parrafo
+     entero en una linea y empujaba el boton de la cabecera a la linea siguiente
+     (comprobado con el navegador el 2026-09-10). Un limite en «ch» no desborda: un bloque
+     nunca pasa del ancho de su contenedor. */
+  --medida-texto: 110ch;
+
+  --radio: 8px;
+  --radio-pequeno: 6px;
+  --sombra: 0 1px 2px rgba(15, 27, 45, .05), 0 1px 3px rgba(15, 27, 45, .06);
+  --sombra-alta: 0 4px 14px rgba(15, 27, 45, .10);
+  --fuente: "Fira Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: "Fira Code", "SFMono-Regular", ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+:root[data-tema="claro"] { color-scheme: light; }
+:root[data-tema="oscuro"] { color-scheme: dark;
+  --acento: #60a5fa;
+  --acento-claro: #1e2f55;
+  --acento-hover: #93c5fd;
+  --secundario: #22d3ee;
+  --secundario-claro: #0f3a44;
+  --critico: #ff5a5a;
+  --critico-fondo: #3f1d1d;
+  --alto: #fb923c;
+  --alto-fondo: #3d2412;
+  --medio: #facc15;
+  --medio-fondo: #3a3210;
+  --bajo: #60a5fa;
+  --bajo-fondo: #1a2c4d;
+  --exito: #4ade80;
+  --exito-fondo: #143524;
+  --neutro: #8b9bb4;
+  --kev: #fca5a5;
+  --critico-texto: #ff7b7b;
+  --alto-texto: #fdba74;
+  --medio-texto: #fde68a;
+  --bajo-texto: #93c5fd;
+  --exito-texto: #86efac;
+  --secundario-texto: #67e8f9;
+  --cat-1: #5b9cf6;
+  --cat-2: #22c3e6;
+  --cat-3: #fb923c;
+  --cat-4: #a78bfa;
+  --cat-5: #a3d94a;
+  --cat-6: #f472b6;
+  --cat-7: #facc15;
+  --cat-8: #34d399;
+  --cat-9: #c98a5e;
+  --cat-10: #d946ef;
+  --cat-11: #0d9488;
+  --cat-12: #d9d26b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema="claro"]) {
+    --fondo: #0b1220;
+    --fondo-panel: #111a2b;
+    --fondo-alt: #16213a;
+    --fondo-hover: #1c2a45;
+    --borde: #26385a;
+    --borde-fuerte: #3a5079;
+    --texto: #e8eefc;
+    --texto-suave: #aab8d2;
+    --texto-tenue: #8a9ab8;
+    --acento: #60a5fa;
+    --acento-claro: #1e2f55;
+    --acento-hover: #93c5fd;
+    --secundario: #22d3ee;
+    --secundario-claro: #0f3a44;
+
+    --critico: #ff5a5a;
+    --critico-fondo: #3f1d1d;
+    --alto: #fb923c;
+    --alto-fondo: #3d2412;
+    --medio: #facc15;
+    --medio-fondo: #3a3210;
+    --bajo: #60a5fa;
+    --bajo-fondo: #1a2c4d;
+    --exito: #4ade80;
+    --exito-fondo: #143524;
+    --neutro: #8b9bb4;
+    --kev: #fca5a5;
+
+    --critico-texto: #ff7b7b;
+    --alto-texto: #fdba74;
+    --medio-texto: #fde68a;
+    --bajo-texto: #93c5fd;
+    --exito-texto: #86efac;
+    --secundario-texto: #67e8f9;
+
+    --cat-1: #5b9cf6;
+    --cat-2: #22c3e6;
+    --cat-3: #fb923c;
+    --cat-4: #a78bfa;
+    --cat-5: #a3d94a;
+    --cat-6: #f472b6;
+    --cat-7: #facc15;
+    --cat-8: #34d399;
+    --cat-9: #c98a5e;
+    --cat-10: #d946ef;
+    --cat-11: #0d9488;
+    --cat-12: #d9d26b;
+
+    --texto-sobre-acento: #0b1220;
+    --texto-sobre-kev: #0b1220;
+
+    --sombra: 0 1px 2px rgba(0, 0, 0, .25);
+    --sombra-alta: 0 4px 14px rgba(0, 0, 0, .35);
+  }
+  /* Boton de tema: en oscuro se ofrece el sol (pasar a claro) */
+  :root:not([data-tema="claro"]) .icono-luna { display: none; }
+  :root:not([data-tema="claro"]) .icono-sol { display: block; }
+}
+
+:root[data-tema="oscuro"] {
+  --fondo: #0b1220;
+  --fondo-panel: #111a2b;
+  --fondo-alt: #16213a;
+  --fondo-hover: #1c2a45;
+  --borde: #26385a;
+  --borde-fuerte: #3a5079;
+  --texto: #e8eefc;
+  --texto-suave: #aab8d2;
+  --texto-tenue: #8a9ab8;
+  --acento: #60a5fa;
+  --acento-claro: #1e2f55;
+  --acento-hover: #93c5fd;
+  --secundario: #22d3ee;
+  --secundario-claro: #0f3a44;
+
+  --critico: #ff5a5a;
+  --critico-fondo: #3f1d1d;
+  --alto: #fb923c;
+  --alto-fondo: #3d2412;
+  --medio: #facc15;
+  --medio-fondo: #3a3210;
+  --bajo: #60a5fa;
+  --bajo-fondo: #1a2c4d;
+  --exito: #4ade80;
+  --exito-fondo: #143524;
+  --neutro: #8b9bb4;
+  --kev: #fca5a5;
+
+  --critico-texto: #ff7b7b;
+  --alto-texto: #fdba74;
+  --medio-texto: #fde68a;
+  --bajo-texto: #93c5fd;
+  --exito-texto: #86efac;
+  --secundario-texto: #67e8f9;
+
+  --cat-1: #5b9cf6;
+  --cat-2: #22c3e6;
+  --cat-3: #fb923c;
+  --cat-4: #a78bfa;
+  --cat-5: #a3d94a;
+  --cat-6: #f472b6;
+  --cat-7: #facc15;
+  --cat-8: #34d399;
+  --cat-9: #c98a5e;
+  --cat-10: #d946ef;
+  --cat-11: #0d9488;
+  --cat-12: #d9d26b;
+
+  --texto-sobre-acento: #0b1220;
+  --texto-sobre-kev: #0b1220;
+
+  --sombra: 0 1px 2px rgba(0, 0, 0, .25);
+  --sombra-alta: 0 4px 14px rgba(0, 0, 0, .35);
+}
+:root[data-tema="oscuro"] .icono-luna { display: none; }
+:root[data-tema="oscuro"] .icono-sol { display: block; }
+/* En claro (por defecto) se ofrece la luna (pasar a oscuro) */
+.icono-sol { display: none; }
+.icono-luna { display: block; }
+:root[data-tema="claro"] .icono-sol { display: none; }
+:root[data-tema="claro"] .icono-luna { display: block; }
+
+/* ------------------------------------------------------------------
+   2. Base y tipografia
+   ------------------------------------------------------------------ */
+* { box-sizing: border-box; }
+
+/* El atributo «hidden» tiene que ganar SIEMPRE (2026-09-07). El «display: none» que
+   le pone el navegador es de especificidad cero, asi que cualquier clase con display
+   propio lo anulaba: .btn { display: inline-flex } dejaba a la vista botones que el
+   codigo daba por ocultos (el «Copiar la orden» de hardening, el «Filtrar» que la
+   busqueda en vivo retira y el boton de la accion mientras se confirma). */
+[hidden] { display: none !important; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: var(--fuente);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--texto);
+  background: var(--fondo);
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--acento); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible, button:focus-visible, summary:focus-visible, [tabindex]:focus-visible {
+  outline: 2px solid var(--acento); outline-offset: 2px; border-radius: 3px;
+}
+
+h1, h2, h3 { line-height: 1.25; color: var(--texto); }
+h1 { font-size: 22px; font-weight: 650; letter-spacing: -.02em; margin: 0 0 4px; }
+h2 { font-size: 14px; font-weight: 600; margin: 0; }
+h3 { font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+p { margin: 0 0 10px; }
+small { font-size: 12px; }
+svg { flex-shrink: 0; }
+
+abbr[title] { text-decoration: underline dotted; text-decoration-color: var(--borde-fuerte); text-underline-offset: 3px; cursor: help; }
+
+/* ------------------------------------------------------------------
+   3. Estructura: cabecera, navegacion, tema, pie
+   ------------------------------------------------------------------ */
+.cabecera {
+  position: sticky; top: 0; z-index: 50;
+  background: var(--fondo-panel);
+  border-bottom: 1px solid var(--borde);
+}
+/* Linea superior de 3px, firma de marca: acento -> secundario */
+.cabecera::before {
+  content: ""; display: block; height: 3px;
+  background: linear-gradient(90deg, var(--acento), var(--secundario));
+}
+.cabecera-interior {
+  max-width: 1400px; margin: 0 auto; padding: 0 20px;
+  display: flex; align-items: stretch; gap: 20px; min-height: 56px;
+}
+
+.marca {
+  display: flex; align-items: center; gap: 10px;
+  line-height: 1.2; color: var(--texto); white-space: nowrap;
+  padding: 8px 0;
+}
+.marca:hover { text-decoration: none; }
+.marca-icono { width: 28px; height: 28px; color: var(--acento); }
+/* El logo subido puede no ser cuadrado: se contiene en la misma caja que el icono por
+   defecto (object-fit) en vez de recortarlo o deformarlo. Fondo blanco fijo (no el de la
+   plantilla) porque muchos logos corporativos son PNG con fondo transparente pensado
+   para fondo claro y se volverían ilegibles sobre la barra lateral en tema oscuro. */
+.marca-logo { object-fit: contain; border-radius: 4px; background: #fff; padding: 2px; }
+.login-cabecera .marca-logo { border-radius: 6px; }
+.logo-vista-previa {
+  max-width: 220px; max-height: 120px; object-fit: contain;
+  background: #fff; border: 1px solid var(--borde); border-radius: 6px; padding: 8px;
+}
+.marca-texto { display: flex; flex-direction: column; }
+.marca strong { font-size: 14px; font-weight: 650; letter-spacing: -.01em; color: var(--texto); }
+.marca span { font-size: 11px; color: var(--texto-suave); }
+
+.nav { display: flex; gap: 2px; flex: 1; flex-wrap: wrap; align-items: stretch; }
+.nav a {
+  display: inline-flex; align-items: center;
+  padding: 0 11px; margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+  color: var(--texto-suave); font-weight: 500; font-size: 13px; white-space: nowrap;
+  transition: color .15s, border-color .15s;
+}
+.nav a:hover { color: var(--texto); text-decoration: none; border-bottom-color: var(--borde-fuerte); }
+.nav a.activo { color: var(--texto); border-bottom-color: var(--acento); font-weight: 600; }
+.nav a:focus-visible { outline-offset: -2px; }
+
+.sesion { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--texto-suave); white-space: nowrap; }
+.sesion-usuario { padding-right: 4px; }
+.sesion-usuario .rol { color: var(--texto-tenue); }
+
+/* Boton de tema (icono sol/luna, gestionado por app.js) */
+.btn-icono { padding: 0; width: 30px; height: 30px; justify-content: center; }
+.btn-icono svg { width: 16px; height: 16px; }
+
+main { flex: 1; width: 100%; max-width: 1400px; margin: 0 auto; padding: 22px 20px 48px; }
+
+.pie-sitio {
+  border-top: 1px solid var(--borde); background: var(--fondo-alt);
+  color: var(--texto-suave); font-size: 12px;
+}
+.pie-sitio-interior {
+  max-width: 1400px; margin: 0 auto; padding: 12px 20px;
+  display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+}
+.pie-sitio a { color: var(--texto-suave); }
+.pie-sitio a:hover { color: var(--acento); }
+
+/* Titulo de pagina */
+.titulo-pagina { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+.titulo-pagina h1 { margin: 0 0 3px; font-size: 22px; font-weight: 650; letter-spacing: -.02em; }
+/* La introduccion de la pagina se ajusta al espacio disponible hasta la medida comun de
+   lectura (--medida-texto): antes se quedaba en 78ch y dejaba media franja vacia. */
+.titulo-pagina p { margin: 0; color: var(--texto-suave); font-size: 13px; max-width: var(--medida-texto); }
+/* El bloque de titulo crece con el espacio que le deja la fila de acciones, en vez de
+   medir solo lo que mide su texto. La base son 320 px, no «auto»: con «auto» el bloque
+   pide de salida los 798 px del parrafo y en las pantallas con varios botones de cabecera
+   (Tendencias, Activos, Software, Inventario tecnologico, Fuentes) la fila de acciones
+   caia a la linea de abajo (medido con el navegador el 2026-09-10). Solo a partir de
+   481 px: por debajo, la cabecera pasa a columna («flex-direction: column») y una base en
+   pixeles se convertiria en ALTO minimo, dejando un hueco vacio bajo el titulo. */
+@media (min-width: 481px) {
+  .titulo-pagina > div:first-child { flex: 1 1 320px; min-width: 0; }
+}
+.acciones-titulo { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* ------------------------------------------------------------------
+   4. Paneles, rejillas y metricas
+   ------------------------------------------------------------------ */
+.panel {
+  background: var(--fondo-panel); border: 1px solid var(--borde);
+  border-radius: var(--radio); box-shadow: var(--sombra); margin-bottom: 18px;
+  min-width: 0;
+}
+.rejilla > .panel { margin-bottom: 0; }
+.panel-cabecera {
+  padding: 12px 16px; border-bottom: 1px solid var(--borde);
+  display: flex; align-items: center; gap: 2px 12px; flex-wrap: wrap;
+}
+/* Los hijos de la cabecera deben poder encoger: sin min-width:0 un titulo o una
+   descripcion larga desborda el cuadro en las columnas estrechas y al aumentar la
+   pagina (regla «Long Token Wrapping» de la base de conocimiento de interfaz). */
+.panel-cabecera > * { min-width: 0; }
+.panel-cabecera h2 { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+/* El subtitulo del panel ocupa su propia linea y se lee hasta la medida comun: sin
+   limite llegaba a 154 caracteres por linea en un panel de 1.111 px (2026-09-10). */
+.panel-cabecera .sub { font-size: 12px; color: var(--texto-suave); font-weight: 400; flex: 1 1 100%;
+  order: 3; overflow-wrap: anywhere; max-width: var(--medida-texto); }
+.panel-cabecera > .btn, .panel-cabecera > .btn-grupo, .panel-cabecera > form,
+.panel-cabecera > .panel-acciones { margin-left: auto; }
+.panel-acciones { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.panel-cuerpo { padding: 16px; }
+.panel-cuerpo.sin-relleno { padding: 0; }
+.panel-cuerpo.sin-relleno .tabla-envoltorio { border-radius: 0 0 var(--radio) var(--radio); }
+.panel-pie { padding: 10px 16px; border-top: 1px solid var(--borde); background: var(--fondo-alt); font-size: 12px; color: var(--texto-suave); border-radius: 0 0 var(--radio) var(--radio); }
+
+.rejilla { display: grid; gap: 18px; margin-bottom: 18px; }
+.rejilla:last-child { margin-bottom: 0; }
+.rejilla.c2 { grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+.rejilla.c3 { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.rejilla.c4 { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.rejilla.c5 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+/* Dos tercios / un tercio (graficos principal + dona) */
+.rejilla.dos-uno { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+.rejilla.uno-dos { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
+.rejilla > * { min-width: 0; }
+/* Filas de dos paneles con contenido heterogeneo (tabla larga + dona): cada panel mide lo que
+   su contenido, para que no quede fondo vacio del panel bajo el .panel-pie. Las filas de metricas
+   (c3/c4/c5) siguen estiradas porque sus tarjetas son homogeneas. */
+.rejilla.c2, .rejilla.dos-uno, .rejilla.uno-dos { align-items: start; }
+
+/* Tarjeta de metrica */
+.metrica { padding: 14px 16px 14px 18px; border-left: 3px solid var(--acento); position: relative; }
+.metrica .valor {
+  font-size: 30px; font-weight: 650; line-height: 1.1; letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums; color: var(--texto);
+}
+.metrica .etiqueta { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--texto-tenue); font-weight: 600; margin-top: 4px; }
+.metrica .nota { font-size: 12px; color: var(--texto-suave); margin-top: 4px; }
+.metrica.critico { border-left-color: var(--critico); }
+.metrica.alto { border-left-color: var(--alto); }
+.metrica.medio { border-left-color: var(--medio); }
+.metrica.bajo { border-left-color: var(--bajo); }
+.metrica.exito { border-left-color: var(--exito); }
+.metrica.neutro { border-left-color: var(--neutro); }
+.metrica.secundario { border-left-color: var(--secundario); }
+.metrica.critico .valor { color: var(--critico-texto); }
+.metrica.alto .valor { color: var(--alto-texto); }
+.metrica.medio .valor { color: var(--medio-texto); }
+.metrica.bajo .valor { color: var(--bajo-texto); }
+.metrica.exito .valor { color: var(--exito-texto); }
+.metrica.neutro .valor { color: var(--texto-suave); }
+
+/* Variante con chispa: texto | grafico (~120x36). Los textos pueden ir
+   sueltos (valor/etiqueta/nota) o agrupados en .metrica-texto. */
+.metrica.con-chispa {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center; column-gap: 12px; row-gap: 0;
+  container-type: inline-size;
+}
+.metrica.con-chispa > .valor, .metrica.con-chispa > .etiqueta, .metrica.con-chispa > .nota,
+.metrica.con-chispa > .metrica-texto { grid-column: 1; min-width: 0; }
+.metrica.con-chispa > .grafico-envoltorio, .metrica.con-chispa > .grafico-vacio, .metrica.con-chispa > .chispa {
+  grid-column: 2; grid-row: 1 / span 3; align-self: center; width: 120px; max-width: 100%;
+}
+.metrica.con-chispa > .grafico-vacio { padding: 8px; font-size: 11px; }
+/* Tarjeta estrecha (< 250px): el grafico pasa debajo del texto a todo el ancho */
+@container (max-width: 250px) {
+  .metrica.con-chispa { grid-template-columns: minmax(0, 1fr); }
+  .metrica.con-chispa > .grafico-envoltorio, .metrica.con-chispa > .grafico-vacio, .metrica.con-chispa > .chispa {
+    grid-column: 1; grid-row: auto; width: 100%; margin-top: 8px;
+  }
+}
+
+/* ------------------------------------------------------------------
+   5. Tablas, insignias, puntos, chips
+   ------------------------------------------------------------------ */
+.tabla-envoltorio { overflow-x: auto; max-width: 100%; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+  text-align: left; padding: 9px 12px; background: var(--fondo-alt);
+  border-bottom: 1px solid var(--borde); font-size: 11px; font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em; color: var(--texto-suave);
+  white-space: nowrap; position: sticky; top: 0; z-index: 1;
+}
+td { padding: 9px 12px; border-bottom: 1px solid var(--borde); vertical-align: top; }
+tbody tr { transition: background .15s; }
+tbody tr:hover { background: var(--fondo-hover); }
+tbody tr:last-child td { border-bottom: none; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.nowrap, th.nowrap { white-space: nowrap; }
+td.acciones, th.acciones { text-align: right; white-space: nowrap; }
+td.acciones .btn { vertical-align: middle; }
+.tabla-compacta td, .tabla-compacta th { padding: 6px 10px; }
+.tabla-compacta { font-size: 12px; }
+tfoot td { background: var(--fondo-alt); font-weight: 600; border-top: 1px solid var(--borde); }
+td .grafico-chispa { vertical-align: middle; }
+th[title] { cursor: help; text-decoration: underline dotted; text-decoration-color: var(--borde-fuerte); text-underline-offset: 3px; }
+
+/* Insignias */
+.insignia {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; white-space: nowrap; line-height: 1.5;
+  background: var(--fondo-hover); color: var(--texto-suave);
+}
+.insignia.critical, .insignia.critico { background: var(--critico-fondo); color: var(--critico-texto); }
+.insignia.high, .insignia.alto { background: var(--alto-fondo); color: var(--alto-texto); }
+.insignia.medium, .insignia.medio { background: var(--medio-fondo); color: var(--medio-texto); }
+.insignia.low, .insignia.bajo { background: var(--bajo-fondo); color: var(--bajo-texto); }
+.insignia.ok, .insignia.exito { background: var(--exito-fondo); color: var(--exito-texto); }
+.insignia.neutra, .insignia.neutro { background: var(--fondo-hover); color: var(--texto-suave); }
+.insignia.info, .insignia.acento { background: var(--acento-claro); color: var(--acento); }
+.insignia.secundario { background: var(--secundario-claro); color: var(--secundario-texto); }
+.insignia.kev { background: var(--kev); color: var(--texto-sobre-kev); }
+
+/* Punto de estado (fuentes, flujo) */
+.punto { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; background: var(--neutro); }
+.punto.ok, .punto.exito, .punto.operativa { background: var(--exito); }
+.punto.degradada, .punto.atencion, .punto.medio { background: var(--medio); }
+.punto.caida, .punto.critico, .punto.error { background: var(--critico); }
+.punto.alto { background: var(--alto); }
+.punto.bajo { background: var(--bajo); }
+.punto.desactivada, .punto.inactivo, .punto.neutro, .punto.sin_datos { background: var(--neutro); }
+
+/* Chips (veredicto de version) */
+.chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.chip {
+  background: var(--fondo-hover); border: 1px solid var(--borde);
+  border-radius: 4px; padding: 1px 7px; font-size: 11px; color: var(--texto-suave);
+}
+.chip.afectada { background: var(--critico-fondo); border-color: var(--critico); color: var(--critico-texto); }
+.chip.no-afectada { background: var(--exito-fondo); border-color: var(--exito); color: var(--exito-texto); }
+
+/* Barra de distribucion compacta en tablas (clases .ancho-N) */
+.barra { height: 6px; background: var(--fondo-hover); border-radius: 3px; overflow: hidden; display: flex; min-width: 60px; }
+.barra span { display: block; height: 100%; }
+.barra span.critical, .barra span.critico { background: var(--critico); }
+.barra span.high, .barra span.alto { background: var(--alto); }
+.barra span.medium, .barra span.medio { background: var(--medio); }
+.barra span.low, .barra span.bajo { background: var(--bajo); }
+
+/* ------------------------------------------------------------------
+   6. Botones, formularios, avisos, estado vacio
+   ------------------------------------------------------------------ */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 7px 13px;
+  min-height: 34px;
+  border: 1px solid var(--borde-fuerte); border-radius: var(--radio-pequeno);
+  background: var(--fondo-panel); color: var(--texto); font-size: 13px; line-height: 1.3;
+  font-weight: 500; font-family: inherit; cursor: pointer; text-decoration: none;
+  transition: background .15s, border-color .15s, color .15s;
+}
+.btn:hover { background: var(--fondo-hover); text-decoration: none; }
+.btn:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+.btn:disabled, .btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+.btn.primario { background: var(--acento); border-color: var(--acento); color: var(--texto-sobre-acento); }
+.btn.primario:hover { background: var(--acento-hover); border-color: var(--acento-hover); }
+.btn.peligro { color: var(--critico-texto); border-color: var(--critico); }
+.btn.peligro:hover { background: var(--critico-fondo); }
+.btn.pequeno { padding: 4px 10px; font-size: 12px; min-height: 30px; }
+.btn.pequeno.btn-icono { width: 30px; height: 30px; padding: 0; }
+.btn svg { width: 14px; height: 14px; }
+.btn-grupo { display: inline-flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+/* Formularios */
+.campo { margin-bottom: 14px; }
+.campo label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--texto-suave); }
+/* Los textos de ayuda tambien se leen hasta la medida comun (--medida-texto): en un panel
+   ancho llegaban a 148 caracteres por linea. En una columna estrecha el min(100%) manda y
+   no cambia nada. */
+.campo .ayuda, .ayuda { font-size: 12px; color: var(--texto-suave); margin-top: 4px; line-height: 1.45;
+  max-width: var(--medida-texto); }
+input[type=text], input[type=password], input[type=number], input[type=email],
+input[type=url], input[type=search], input[type=date], input[type=file], select, textarea {
+  width: 100%; padding: 7px 10px; border: 1px solid var(--borde-fuerte);
+  border-radius: var(--radio-pequeno); background: var(--fondo-panel); color: var(--texto);
+  font-family: inherit; font-size: 13px; line-height: 1.4;
+}
+input::placeholder, textarea::placeholder { color: var(--texto-tenue); }
+input:focus, select:focus, textarea:focus {
+  outline: 2px solid var(--acento); outline-offset: -1px; border-color: var(--acento);
+}
+input[type=checkbox], input[type=radio] { accent-color: var(--acento); }
+textarea { resize: vertical; min-height: 68px; }
+.campo-fila { display: flex; gap: 12px; flex-wrap: wrap; }
+.campo-fila > .campo { flex: 1; min-width: 170px; }
+.casilla { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 12px; }
+.casilla input[type=checkbox] { margin-top: 3px; width: auto; flex-shrink: 0; }
+.casilla label { margin: 0; font-weight: 500; color: var(--texto); font-size: 13px; }
+fieldset { border: 1px solid var(--borde); border-radius: var(--radio); padding: 14px 16px; margin: 0 0 16px; }
+legend { font-size: 12px; font-weight: 600; padding: 0 6px; color: var(--texto-suave); text-transform: uppercase; letter-spacing: .04em; }
+
+/* Avisos */
+.aviso {
+  padding: 11px 14px; border-radius: var(--radio-pequeno); margin-bottom: 12px;
+  border: 1px solid var(--borde); border-left: 3px solid var(--acento);
+  background: var(--acento-claro); color: var(--texto); font-size: 13px;
+  display: flex; gap: 10px; align-items: flex-start;
+}
+.aviso > svg, .aviso-icono { width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }
+.aviso > div { min-width: 0; }
+.aviso strong { font-weight: 650; }
+.aviso a { font-weight: 600; }
+.aviso.exito { background: var(--exito-fondo); border-left-color: var(--exito); }
+.aviso.exito > svg, .aviso.exito strong { color: var(--exito-texto); }
+.aviso.error { background: var(--critico-fondo); border-left-color: var(--critico); }
+.aviso.error > svg, .aviso.error strong { color: var(--critico-texto); }
+.aviso.aviso-nivel { background: var(--medio-fondo); border-left-color: var(--medio); }
+.aviso.aviso-nivel > svg { color: var(--medio-texto); }
+.aviso.info { background: var(--bajo-fondo); border-left-color: var(--bajo); }
+.aviso.info > svg { color: var(--bajo-texto); }
+.aviso.message { background: var(--acento-claro); border-left-color: var(--acento); }
+
+/* Estado vacio: icono gris (mascara SVG en CSS, sin tocar plantillas) y
+   dos lineas de texto. Con .sin-icono se omite el icono. */
+.vacio { padding: 32px 20px; text-align: center; color: var(--texto-suave); font-size: 13px; }
+.vacio::before {
+  content: ""; display: block; width: 32px; height: 32px; margin: 0 auto 10px;
+  background-color: var(--neutro);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 9l9-6 9 6v6l-9 6-9-6z'/%3E%3Cpath d='M3 9l9 6 9-6M12 15v6'/%3E%3C/svg%3E") no-repeat center / contain;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 9l9-6 9 6v6l-9 6-9-6z'/%3E%3Cpath d='M3 9l9 6 9-6M12 15v6'/%3E%3C/svg%3E") no-repeat center / contain;
+}
+.vacio.sin-icono::before { display: none; }
+.vacio > svg { width: 32px; height: 32px; color: var(--neutro); margin-bottom: 10px; }
+.vacio > svg + p, .vacio > svg ~ p { margin-top: 0; }
+.vacio p { margin: 4px 0; }
+.vacio p:first-of-type { color: var(--texto); font-weight: 500; }
+.vacio .pequeno { color: var(--texto-suave); }
+
+/* ------------------------------------------------------------------
+   7. Contrato CSS de graficos SVG (webui/graficos.py, seccion 5)
+   ------------------------------------------------------------------ */
+.grafico-envoltorio { margin: 0; min-width: 0; }
+.grafico { display: block; width: 100%; height: auto; font-family: inherit; overflow: visible; }
+.grafico-dona .grafico { width: min(100%, 220px); margin: 0 auto; }
+.grafico-medidor .grafico { width: min(100%, 180px); margin: 0 auto; }
+.grafico-chispa { display: inline-block; width: 120px; max-width: 100%; vertical-align: middle; line-height: 0; }
+.grafico-chispa .grafico { overflow: hidden; }
+
+.grafico text { fill: var(--texto-suave); font-size: 11px; font-family: inherit; }
+.grafico .eje { fill: var(--texto-suave); font-size: 11px; }
+.grafico .etiqueta-valor { fill: var(--texto); font-weight: 600; }
+.grafico .etiqueta-fila { fill: var(--texto); font-size: 12px; }
+.grafico .nota-svg { fill: var(--texto-tenue); font-size: 11px; }
+.grafico .dona-centro { fill: var(--texto); font-size: 26px; font-weight: 650; letter-spacing: -.02em; }
+.grafico .dona-centro-etiqueta { fill: var(--texto-tenue); font-size: 11px; text-transform: uppercase; letter-spacing: .05em; }
+/* Medidor: el arco de valor es <path class="serie-<clave> medidor-valor">; el color lo da .serie-*
+   y aqui no se fija fill (pisaria la severidad). El texto central usa dona-centro + medidor-texto +
+   texto-<clave> (colores al final del fichero) y los extremos 0/maximo usan .eje. */
+.grafico .medidor-texto { font-variant-numeric: tabular-nums; }
+.grafico .rejilla { stroke: var(--borde); stroke-width: 1; }
+.grafico .eje-linea { stroke: var(--borde-fuerte); }
+.grafico .arco-fondo, .grafico .fondo-barra { fill: none; stroke: var(--fondo-hover); }
+.grafico .fondo-barra { fill: var(--fondo-hover); stroke: none; }
+.grafico .aguja { stroke: var(--texto); stroke-width: 2; fill: var(--texto); }
+.grafico .punto { stroke: var(--fondo-panel); stroke-width: 2; }
+/* Etiqueta enlazada (<a><text class="eje">…): debe ganar a .grafico .eje y .etiqueta-fila */
+.grafico a text, .grafico a .eje, .grafico a .etiqueta-fila { fill: var(--acento); }
+.grafico a:hover text { text-decoration: underline; }
+.grafico a { cursor: pointer; }
+.grafico rect[class*="serie-"]:hover, .grafico path[class*="serie-"]:hover { opacity: .85; }
+
+/* Series: relleno (.serie-*), trazo (.linea-*) y area bajo la linea (.area-*) */
+.serie-critico { fill: var(--critico); }
+.linea-critico { stroke: var(--critico); fill: none; stroke-width: 2; }
+.area-critico { fill: var(--critico); opacity: .12; }
+.serie-alto { fill: var(--alto); }
+.linea-alto { stroke: var(--alto); fill: none; stroke-width: 2; }
+.area-alto { fill: var(--alto); opacity: .12; }
+.serie-medio { fill: var(--medio); }
+.linea-medio { stroke: var(--medio); fill: none; stroke-width: 2; }
+.area-medio { fill: var(--medio); opacity: .12; }
+.serie-bajo { fill: var(--bajo); }
+.linea-bajo { stroke: var(--bajo); fill: none; stroke-width: 2; }
+.area-bajo { fill: var(--bajo); opacity: .12; }
+.serie-exito { fill: var(--exito); }
+.linea-exito { stroke: var(--exito); fill: none; stroke-width: 2; }
+.area-exito { fill: var(--exito); opacity: .12; }
+.serie-neutro { fill: var(--neutro); }
+.linea-neutro { stroke: var(--neutro); fill: none; stroke-width: 2; }
+.area-neutro { fill: var(--neutro); opacity: .12; }
+.serie-acento { fill: var(--acento); }
+.linea-acento { stroke: var(--acento); fill: none; stroke-width: 2; }
+.area-acento { fill: var(--acento); opacity: .12; }
+.serie-secundario { fill: var(--secundario); }
+.linea-secundario { stroke: var(--secundario); fill: none; stroke-width: 2; }
+.area-secundario { fill: var(--secundario); opacity: .12; }
+.serie-kev { fill: var(--kev); }
+.linea-kev { stroke: var(--kev); fill: none; stroke-width: 2; stroke-dasharray: 5 3; }
+.area-kev { fill: var(--kev); opacity: .12; }
+.serie-cat-1 { fill: var(--cat-1); }
+.linea-cat-1 { stroke: var(--cat-1); fill: none; stroke-width: 2; }
+.area-cat-1 { fill: var(--cat-1); opacity: .12; }
+.serie-cat-2 { fill: var(--cat-2); }
+.linea-cat-2 { stroke: var(--cat-2); fill: none; stroke-width: 2; }
+.area-cat-2 { fill: var(--cat-2); opacity: .12; }
+.serie-cat-3 { fill: var(--cat-3); }
+.linea-cat-3 { stroke: var(--cat-3); fill: none; stroke-width: 2; }
+.area-cat-3 { fill: var(--cat-3); opacity: .12; }
+.serie-cat-4 { fill: var(--cat-4); }
+.linea-cat-4 { stroke: var(--cat-4); fill: none; stroke-width: 2; }
+.area-cat-4 { fill: var(--cat-4); opacity: .12; }
+.serie-cat-5 { fill: var(--cat-5); }
+.linea-cat-5 { stroke: var(--cat-5); fill: none; stroke-width: 2; }
+.area-cat-5 { fill: var(--cat-5); opacity: .12; }
+.serie-cat-6 { fill: var(--cat-6); }
+.linea-cat-6 { stroke: var(--cat-6); fill: none; stroke-width: 2; }
+.area-cat-6 { fill: var(--cat-6); opacity: .12; }
+.serie-cat-7 { fill: var(--cat-7); }
+.linea-cat-7 { stroke: var(--cat-7); fill: none; stroke-width: 2; }
+.area-cat-7 { fill: var(--cat-7); opacity: .12; }
+.serie-cat-8 { fill: var(--cat-8); }
+.linea-cat-8 { stroke: var(--cat-8); fill: none; stroke-width: 2; }
+.area-cat-8 { fill: var(--cat-8); opacity: .12; }
+.serie-cat-9 { fill: var(--cat-9); }
+.linea-cat-9 { stroke: var(--cat-9); fill: none; stroke-width: 2; }
+.area-cat-9 { fill: var(--cat-9); opacity: .12; }
+.serie-cat-10 { fill: var(--cat-10); }
+.linea-cat-10 { stroke: var(--cat-10); fill: none; stroke-width: 2; }
+.area-cat-10 { fill: var(--cat-10); opacity: .12; }
+.serie-cat-11 { fill: var(--cat-11); }
+.linea-cat-11 { stroke: var(--cat-11); fill: none; stroke-width: 2; }
+.area-cat-11 { fill: var(--cat-11); opacity: .12; }
+.serie-cat-12 { fill: var(--cat-12); }
+.linea-cat-12 { stroke: var(--cat-12); fill: none; stroke-width: 2; }
+.area-cat-12 { fill: var(--cat-12); opacity: .12; }
+/* Puntos sobre una linea: relleno de la serie con halo del panel */
+.grafico circle.punto { stroke: var(--fondo-panel); }
+.grafico .linea-critico.punto, .grafico .linea-alto.punto, .grafico .linea-medio.punto { stroke-width: 2; }
+
+/* Leyenda */
+.leyenda { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 10px 0 0; padding: 0; font-size: 12px; color: var(--texto-suave); }
+.leyenda li { display: inline-flex; align-items: center; gap: 6px; }
+.leyenda b { color: var(--texto); font-weight: 600; font-variant-numeric: tabular-nums; }
+.leyenda small, .leyenda .porcentaje { color: var(--texto-tenue); font-size: 11px; }
+.leyenda a { color: inherit; }
+.leyenda-punto { width: 10px; height: 10px; border-radius: 3px; display: inline-block; background: currentColor; flex-shrink: 0; }
+.leyenda-punto.serie-critico { background: var(--critico); }
+.leyenda-punto.serie-alto { background: var(--alto); }
+.leyenda-punto.serie-medio { background: var(--medio); }
+.leyenda-punto.serie-bajo { background: var(--bajo); }
+.leyenda-punto.serie-exito { background: var(--exito); }
+.leyenda-punto.serie-neutro { background: var(--neutro); }
+.leyenda-punto.serie-acento { background: var(--acento); }
+.leyenda-punto.serie-secundario { background: var(--secundario); }
+.leyenda-punto.serie-kev { background: var(--kev); }
+.leyenda-punto.serie-cat-1 { background: var(--cat-1); }
+.leyenda-punto.serie-cat-2 { background: var(--cat-2); }
+.leyenda-punto.serie-cat-3 { background: var(--cat-3); }
+.leyenda-punto.serie-cat-4 { background: var(--cat-4); }
+.leyenda-punto.serie-cat-5 { background: var(--cat-5); }
+.leyenda-punto.serie-cat-6 { background: var(--cat-6); }
+.leyenda-punto.serie-cat-7 { background: var(--cat-7); }
+.leyenda-punto.serie-cat-8 { background: var(--cat-8); }
+.leyenda-punto.serie-cat-9 { background: var(--cat-9); }
+.leyenda-punto.serie-cat-10 { background: var(--cat-10); }
+.leyenda-punto.serie-cat-11 { background: var(--cat-11); }
+.leyenda-punto.serie-cat-12 { background: var(--cat-12); }
+/* Punto de leyenda para una serie dibujada como linea (raya) */
+.leyenda-punto.linea-critico, .leyenda-punto.linea-alto, .leyenda-punto.linea-medio, .leyenda-punto.linea-bajo,
+.leyenda-punto.linea-exito, .leyenda-punto.linea-neutro, .leyenda-punto.linea-acento, .leyenda-punto.linea-secundario,
+.leyenda-punto.linea-kev { height: 3px; border-radius: 2px; width: 14px; }
+.leyenda-punto.linea-critico { background: var(--critico); }
+.leyenda-punto.linea-alto { background: var(--alto); }
+.leyenda-punto.linea-medio { background: var(--medio); }
+.leyenda-punto.linea-bajo { background: var(--bajo); }
+.leyenda-punto.linea-exito { background: var(--exito); }
+.leyenda-punto.linea-neutro { background: var(--neutro); }
+.leyenda-punto.linea-acento { background: var(--acento); }
+.leyenda-punto.linea-secundario { background: var(--secundario); }
+.leyenda-punto.linea-kev { background: var(--kev); }
+
+/* Estado vacio de un grafico */
+.grafico-vacio { padding: 28px; text-align: center; color: var(--texto-tenue); font-size: 13px; border: 1px dashed var(--borde); border-radius: var(--radio); }
+
+/* Barra de progreso 100 % apilada (HTML con .ancho-N o SVG interno) */
+.progreso { height: 10px; border-radius: 5px; overflow: hidden; display: flex; background: var(--fondo-hover); }
+.progreso span { display: block; height: 100%; }
+/* Separador de 1,5 px entre tramos contiguos (2026-09-09): dos tramos de colores
+   parecidos (por ejemplo «Altas» y «Medias») se leian como uno solo. */
+.progreso span + span { border-left: 1.5px solid var(--fondo-panel); }
+.progreso span.serie-critico { background: var(--critico); }
+.progreso span.serie-alto { background: var(--alto); }
+.progreso span.serie-medio { background: var(--medio); }
+.progreso span.serie-bajo { background: var(--bajo); }
+.progreso span.serie-exito { background: var(--exito); }
+.progreso span.serie-neutro { background: var(--neutro); }
+.progreso span.serie-acento { background: var(--acento); }
+.progreso span.serie-secundario { background: var(--secundario); }
+.progreso span.serie-kev { background: var(--kev); }
+.progreso span.serie-cat-1 { background: var(--cat-1); }
+.progreso span.serie-cat-2 { background: var(--cat-2); }
+.progreso span.serie-cat-3 { background: var(--cat-3); }
+.progreso span.serie-cat-4 { background: var(--cat-4); }
+.progreso span.serie-cat-5 { background: var(--cat-5); }
+.progreso span.serie-cat-6 { background: var(--cat-6); }
+.progreso span.serie-cat-7 { background: var(--cat-7); }
+.progreso span.serie-cat-8 { background: var(--cat-8); }
+.progreso span.serie-cat-9 { background: var(--cat-9); }
+.progreso span.serie-cat-10 { background: var(--cat-10); }
+.progreso span.serie-cat-11 { background: var(--cat-11); }
+.progreso span.serie-cat-12 { background: var(--cat-12); }
+.progreso svg, .progreso .grafico { display: block; width: 100%; height: 100%; }
+.grafico-progreso .grafico { height: 10px; border-radius: 5px; overflow: hidden; background: var(--fondo-hover); }
+.grafico-progreso .leyenda { margin-top: 8px; }
+
+/* Diagrama de flujo (proceso horizontal con flechas) */
+.flujo { display: flex; flex-wrap: wrap; gap: 0; align-items: stretch; }
+.flujo-paso {
+  position: relative; flex: 1 1 150px; min-width: 0;
+  padding: 12px 14px; border: 1px solid var(--borde); border-radius: var(--radio);
+  background: var(--fondo-panel); border-top: 3px solid var(--neutro);
+  color: inherit; text-decoration: none; display: block;
+}
+a.flujo-paso:hover { background: var(--fondo-hover); text-decoration: none; }
+.flujo-paso .titulo { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--texto-tenue); font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.flujo-paso .titulo .punto { margin: 0; }
+.flujo-paso .valor { font-size: 20px; font-weight: 650; margin-top: 2px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; color: var(--texto); }
+.flujo-paso .nota { font-size: 12px; color: var(--texto-suave); }
+.flujo-paso.ok { border-top: 3px solid var(--exito); }
+.flujo-paso.atencion { border-top: 3px solid var(--medio); }
+.flujo-paso.critico { border-top: 3px solid var(--critico); }
+.flujo-paso.inactivo { border-top: 3px solid var(--neutro); }
+.flujo-paso.inactivo .valor { color: var(--texto-suave); }
+.flujo-flecha { display: flex; align-items: center; justify-content: center; color: var(--texto-tenue); flex: 0 0 26px; }
+.flujo-flecha svg { width: 16px; height: 16px; }
+.flujo.compacto .flujo-paso { padding: 8px 12px; flex-basis: 120px; }
+.flujo.compacto .flujo-paso .valor { font-size: 14px; }
+.flujo.compacto .flujo-flecha { flex-basis: 20px; }
+
+/* ------------------------------------------------------------------
+   8. Login y error
+   ------------------------------------------------------------------ */
+.login-marco { position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 20px; }
+.login-marco::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--acento), var(--secundario)); }
+.login-caja { width: 100%; max-width: 380px; }
+.login-caja .panel { margin-bottom: 0; box-shadow: var(--sombra-alta); }
+.login-caja .panel-cuerpo { padding: 26px; }
+.login-cabecera { text-align: center; margin-bottom: 22px; }
+.login-cabecera .marca { flex-direction: column; justify-content: center; gap: 10px; white-space: normal; padding: 0; }
+.login-cabecera .marca-icono { width: 44px; height: 44px; }
+.login-cabecera .marca-texto { align-items: center; }
+.login-cabecera h1 { font-size: 18px; margin: 0; letter-spacing: -.01em; }
+.login-cabecera p { font-size: 12px; color: var(--texto-suave); margin: 2px 0 0; }
+.login-pie { text-align: center; font-size: 11px; color: var(--texto-tenue); margin-top: 18px; }
+
+.error-codigo { font-size: 44px; font-weight: 650; color: var(--texto-tenue); letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+.error-caja { max-width: 480px; margin: 40px auto; }
+
+/* ------------------------------------------------------------------
+   9. Utilidades (sustituyen a los atributos style="" en linea para que
+      la CSP prescinda de 'unsafe-inline' en style-src)
+   ------------------------------------------------------------------ */
+.mono { font-family: var(--mono); font-size: 12px; }
+.tenue { color: var(--texto-tenue); }
+.suave { color: var(--texto-suave); }
+.pequeno { font-size: 12px; }
+.centrado { text-align: center; }
+.derecha { text-align: right; }
+.nowrap { white-space: nowrap; }
+.oculto-visual { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* Bloques del panel que la persona decidió ocultar (data-widget + localStorage,
+   webui/static/app.js). Sin JavaScript nunca se aplica, así que todo se ve. */
+.widget-oculto { display: none; }
+.personalizar-panel { margin-bottom: 18px; }
+.personalizar-panel #personalizar-panel-opciones { display: flex; flex-wrap: wrap; gap: 4px 24px; }
+.personalizar-panel .casilla { margin-bottom: 4px; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+.paginacion { display: flex; gap: 6px; align-items: center; justify-content: center; padding: 14px; flex-wrap: wrap; border-top: 1px solid var(--borde); }
+.paginacion .actual { font-weight: 600; color: var(--texto-suave); font-size: 13px; }
+
+/* Paginacion de los listados largos (2026-09-07). Objetivo tactil de 44 px de la
+   habilidad ui-ux-pro-max: son controles que se pulsan muchas veces seguidas.
+   El recuento va en su propia linea para que no empuje a los botones, y las cifras
+   con tabular-nums para que no bailen al cambiar de pagina. El foco visible y el
+   atenuado de los deshabilitados los dan .btn:focus-visible y .btn:disabled. */
+.paginacion { gap: 8px; }
+.paginacion .paginacion-info { flex: 1 1 100%; text-align: center; font-size: 13px;
+  color: var(--texto-suave); font-variant-numeric: tabular-nums; }
+.paginacion .paginacion-boton { min-height: 44px; min-width: 44px; padding: 6px 14px;
+  justify-content: center; }
+.paginacion .paginacion-numero { font-variant-numeric: tabular-nums; }
+.paginacion .paginacion-actual { font-weight: 700; }
+.paginacion .paginacion-elipsis { padding: 0 4px; color: var(--texto-tenue); }
+@media (max-width: 640px) {
+  /* En pantalla estrecha se dejan Primera/Anterior/Siguiente/Ultima y la pagina
+     actual: los numeros intermedios no caben y ya estan en el recuento. */
+  .paginacion .paginacion-numero:not(.paginacion-actual) { display: none; }
+}
+
+/* Confirmacion dentro de la propia pagina (2026-09-07). Sustituye a los dialogos
+   del navegador, que el usuario veia «como si se ejecutara codigo JavaScript».
+   Las celdas de acciones llevan text-align:right y white-space:nowrap, de ahi las
+   dos anulaciones. El texto usa --medio-texto sobre --medio-fondo, que es la pareja
+   con contraste comprobado en los dos temas. */
+.confirmacion-en-linea { display: flex; flex-direction: column; gap: 8px;
+  align-items: flex-start; margin-top: 8px; padding: 10px 12px; max-width: 340px;
+  background: var(--medio-fondo); border-left: 3px solid var(--medio);
+  border-radius: var(--radio-pequeno); text-align: left; white-space: normal; }
+.confirmacion-en-linea .confirmacion-texto { margin: 0; font-size: 12px; line-height: 1.45;
+  color: var(--medio-texto); }
+.confirmacion-en-linea .confirmacion-botones { display: flex; gap: 8px; flex-wrap: wrap; }
+.confirmacion-en-linea .btn { min-height: 44px; padding: 8px 14px; font-size: 13px; }
+td.acciones .confirmacion-en-linea, .acciones .confirmacion-en-linea { margin-left: auto; }
+
+.filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+.filtros .campo { margin: 0; min-width: 130px; }
+.filtros .casilla { margin: 0 0 8px; }
+
+.detalle-lista { display: grid; grid-template-columns: auto 1fr; gap: 7px 16px; font-size: 13px; align-items: baseline; margin: 0; }
+.detalle-lista dt { color: var(--texto-tenue); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.detalle-lista dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+
+.bloque-texto { background: var(--fondo-alt); border: 1px solid var(--borde); border-radius: var(--radio-pequeno); padding: 11px 13px; white-space: pre-wrap; font-size: 13px; line-height: 1.6; }
+
+.mb-6   { margin-bottom: 6px; }
+.mb-18  { margin-bottom: 18px; }
+.mt-8   { margin-top: 8px; }
+.mt-10  { margin-top: 10px; }
+.mt-12  { margin-top: 12px; }
+.mt-14  { margin-top: 14px; }
+.mt-16  { margin-top: 16px; }
+.mt-neg8 { margin-top: -8px; }
+.m-0    { margin: 0; }
+.m0-pl18 { margin: 0; padding-left: 18px; }
+.m0auto-56 { max-width: 56ch; margin: 0 auto 18px; }
+.p-50-20 { padding: 50px 20px; }
+.p-3-6-12 { padding: 3px 6px; font-size: 12px; }
+.p-11-16 { padding: 11px 16px; }
+.p-10-16 { padding: 10px 16px; }
+.inline { display: inline; }
+.flex-4 { display: flex; gap: 4px; }
+.flex-8 { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.flex-entre { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.flex2  { flex: 2; }
+.flex2-220 { flex: 2; min-width: 220px; }
+.minw-auto { min-width: auto; }
+.minw-150 { min-width: 150px; }
+.maxw-160 { max-width: 160px; }
+.maxw-280 { max-width: 280px; }
+.maxw-420 { max-width: 420px; }
+.maxw-480 { max-width: 480px; }
+.w-170  { width: 170px; }
+.w-220  { width: 220px; }
+.w-1pct { width: 1%; }
+.w-full-center { width: 100%; justify-content: center; }
+.float-r { float: right; }
+.cursor-pointer { cursor: pointer; }
+.color-inherit { color: inherit; }
+.borde-arriba { border-top: 1px solid var(--borde); }
+
+.txt-critico { color: var(--critico-texto); }
+.txt-critico-b { color: var(--critico-texto); font-weight: 600; }
+.txt-medio  { color: var(--medio-texto); }
+.txt-alto   { color: var(--alto-texto); }
+.txt-bajo   { color: var(--bajo-texto); }
+.txt-exito  { color: var(--exito-texto); font-weight: 600; }
+.txt-exito-b { color: var(--exito-texto); font-weight: 600; }
+.txt-acento { color: var(--acento); }
+.txt-kev { color: var(--kev); font-weight: 600; }
+
+.fs-16-b, .metrica .valor.fs-16-b { font-size: 16px; font-weight: 600; }
+.fs-18, .metrica .valor.fs-18 { font-size: 18px; }
+.fs-18-m8 { font-size: 18px; margin: 8px 0; }
+.fs-20, .metrica .valor.fs-20 { font-size: 20px; }
+.fs-22-b, .metrica .valor.fs-22-b { font-size: 22px; font-weight: 650; }
+.fs-22-b.txt-medio { color: var(--medio-texto); }
+.fs-22-b.txt-exito { color: var(--exito-texto); }
+.fs-38-tenue { font-size: 38px; font-weight: 650; color: var(--texto-tenue); }
+
+/* Anchos en pasos del 5 % (barras .barra y .progreso sin style="") */
+.ancho-0{width:0%}.ancho-5{width:5%}.ancho-10{width:10%}.ancho-15{width:15%}
+.ancho-20{width:20%}.ancho-25{width:25%}.ancho-30{width:30%}.ancho-35{width:35%}
+.ancho-40{width:40%}.ancho-45{width:45%}.ancho-50{width:50%}.ancho-55{width:55%}
+.ancho-60{width:60%}.ancho-65{width:65%}.ancho-70{width:70%}.ancho-75{width:75%}
+.ancho-80{width:80%}.ancho-85{width:85%}.ancho-90{width:90%}.ancho-95{width:95%}
+.ancho-100{width:100%}
+
+/* Glosario de terminos (pie de las paginas de consulta) */
+.glosario { display: grid; grid-template-columns: max-content 1fr; gap: 6px 18px; margin: 0; }
+.glosario dt { font-weight: 600; color: var(--texto); white-space: nowrap; }
+.glosario dd { margin: 0; color: var(--texto-suave); font-size: 13px; line-height: 1.45; }
+.lista-pasos { margin: 6px 0 8px; padding-left: 20px; }
+.lista-pasos li { margin-bottom: 3px; }
+
+/* ------------------------------------------------------------------
+   10. Responsivo e impresion
+   ------------------------------------------------------------------ */
+@media (max-width: 820px) {
+  .cabecera-interior { flex-wrap: wrap; padding: 6px 14px 0; gap: 8px 12px; min-height: 0; }
+  .marca { flex: 1; }
+  .sesion { order: 2; }
+  .nav { order: 3; width: 100%; flex: 1 1 100%; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+  .nav a { padding: 8px 10px; }
+  main { padding: 16px 14px 32px; }
+  .rejilla.dos-uno, .rejilla.uno-dos { grid-template-columns: 1fr; }
+  .rejilla.c2, .rejilla.c3 { grid-template-columns: 1fr; }
+  .rejilla.c4, .rejilla.c5 { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  .detalle-lista { grid-template-columns: 1fr; gap: 2px 0; }
+  .detalle-lista dd { margin-bottom: 8px; }
+  .titulo-pagina h1 { font-size: 20px; }
+  .metrica .valor { font-size: 26px; }
+  .pie-sitio-interior { flex-direction: column; gap: 4px; }
+  .flujo-flecha { display: none; }
+  .flujo { gap: 8px; }
+  .flujo-paso { flex-basis: calc(50% - 4px); }
+  .metrica.con-chispa { grid-template-columns: minmax(0, 1fr); }
+  .metrica.con-chispa > .grafico-envoltorio, .metrica.con-chispa > .grafico-vacio, .metrica.con-chispa > .chispa {
+    grid-column: 1; grid-row: auto; width: 100%; margin-top: 8px;
+  }
+}
+@media (max-width: 720px) {
+  .glosario { grid-template-columns: 1fr; }
+  .glosario dd { margin-bottom: 6px; }
+}
+@media (max-width: 480px) {
+  .flujo-paso { flex-basis: 100%; }
+  .rejilla.c4, .rejilla.c5 { grid-template-columns: 1fr 1fr; }
+}
+
+@media print {
+  :root, :root:not([data-tema="claro"]), :root[data-tema="oscuro"] {
+    --fondo: #ffffff; --fondo-panel: #ffffff; --fondo-alt: #f4f6f9; --fondo-hover: #eef2f7;
+    --borde: #cbd5e1; --borde-fuerte: #94a3b8;
+    --texto: #0f1b2d; --texto-suave: #475569; --texto-tenue: #607087;
+    --acento: #1e4d8c; --acento-claro: #e6eef9; --acento-hover: #163c6e;
+    --secundario: #0e8c8a; --secundario-claro: #e1f4f3;
+    --critico: #b91c1c; --critico-fondo: #fdecec; --alto: #dd6b20; --alto-fondo: #fdf1e7;
+    --medio: #b7791f; --medio-fondo: #fbf3e0; --bajo: #2b6cb0; --bajo-fondo: #e8f1fb;
+    --exito: #15803d; --exito-fondo: #e6f6ec; --neutro: #6b7280; --kev: #7f1d1d;
+    --critico-texto: #b91c1c; --alto-texto: #9a4a0c; --medio-texto: #7a5209;
+    --bajo-texto: #2b6cb0; --exito-texto: #136f37; --secundario-texto: #0a6e6c;
+    --cat-1: #1d5fbf; --cat-2: #0891b2; --cat-3: #e0700f; --cat-4: #7c3aed;
+    --cat-5: #65a30d; --cat-6: #c2185b; --cat-7: #b8860b; --cat-8: #0f9d58;
+    --cat-9: #7a3e12; --cat-10: #6d1b7b; --cat-11: #0d9488; --cat-12: #5b5a17;
+    --texto-sobre-acento: #ffffff; --texto-sobre-kev: #ffffff;
+    --sombra: none; --sombra-alta: none;
+  }
+  @page { margin: 12mm; }
+  html, body { background: #fff; color: #000; font-size: 11px; }
+  body { display: block; }
+  .cabecera, .pie-sitio, .btn, .btn-grupo, .filtros, .paginacion, .acciones-titulo,
+  .panel-acciones, .no-imprimir, form[method=post], .panel-cabecera > form { display: none !important; }
+  main { max-width: none; padding: 0; }
+  .titulo-pagina { margin-bottom: 10px; }
+  .titulo-pagina h1 { font-size: 18px; }
+  .panel { box-shadow: none; break-inside: avoid; margin-bottom: 8px; border-color: var(--borde); }
+  .panel-cabecera { padding: 8px 12px; }
+  .panel-cuerpo { padding: 10px 12px; }
+  .rejilla { gap: 8px; margin-bottom: 8px; }
+  .rejilla.c2 { grid-template-columns: 1fr 1fr; }
+  .rejilla.c3 { grid-template-columns: repeat(3, 1fr); }
+  .rejilla.c4 { grid-template-columns: repeat(4, 1fr); }
+  .rejilla.c5 { grid-template-columns: repeat(5, 1fr); }
+  .rejilla.dos-uno { grid-template-columns: 2fr 1fr; }
+  .rejilla.uno-dos { grid-template-columns: 1fr 2fr; }
+  .metrica { padding: 8px 12px; }
+  .metrica .valor { font-size: 20px; }
+  .grafico-envoltorio { width: 100%; }
+  .grafico { max-height: 70mm; }
+  .grafico-dona .grafico { width: min(100%, 160px); }
+  table { font-size: 11px; }
+  th, td { padding: 4px 6px; }
+  th { position: static; }
+  tbody tr:hover { background: transparent; }
+  .tabla-envoltorio { overflow: visible; }
+  a { color: inherit; text-decoration: none; }
+  .aviso, .insignia, .chip, .metrica, .flujo-paso, .progreso, .progreso span, .barra span, .leyenda-punto {
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+}
+
+/* ---- Añadidos 2026-09-03: reglas solicitadas por las páginas de fuentes, tecnologías y detalle ---- */
+.grafico .nota { fill: var(--texto-tenue); font-weight: 400; }
+.grafico .medidor-fondo { fill: var(--fondo-hover); }
+.grafico .texto-critico { fill: var(--critico-texto); }
+.grafico .texto-alto { fill: var(--alto-texto); }
+.grafico .texto-medio { fill: var(--medio-texto); }
+.grafico .texto-bajo { fill: var(--bajo-texto); }
+.grafico .texto-neutro { fill: var(--texto-tenue); }
+.progreso.progreso-16 { height: 16px; border-radius: 8px; }
+.flujo-paso .titulo a { color: inherit; text-decoration: none; }
+.flujo-paso .titulo a:hover { text-decoration: underline; }
+.metrica.con-chispa .grafico-chispa .grafico { width: 120px; height: 36px; }
+.panel-pie .leyenda { margin-top: 0; }
+td .grafico-progreso { margin-top: 3px; }
+.celda-chispa .grafico-chispa { width: 90px; }
+.metrica .valor .leyenda-punto, .insignia .leyenda-punto { vertical-align: middle; margin-right: 2px; }
+.txt-b { font-weight: 600; }
+
+/* Halo y rótulos de línea en gráficos (contrato de gráficos) */
+.grafico .linea-halo { stroke: var(--fondo-panel); stroke-width: 5; fill: none; stroke-linejoin: round; stroke-linecap: round; }
+.grafico .etiqueta-linea { font-size: 11px; paint-order: stroke; stroke: var(--fondo-panel); stroke-width: 3px; stroke-linejoin: round; }
+
+/* ===================================================================
+   Reglas de la habilidad ui-ux-pro-max (lista previa a la entrega)
+   =================================================================== */
+/* Todo lo interactivo se ve interactivo */
+select, summary, label[for], [data-toggle], [data-tema-toggle], .tab, input[type=checkbox], input[type=radio] { cursor: pointer; }
+/* Objetivo tactil del desplegable. El <summary> de una linea de 12 px quedaba en 12 px
+   de alto; el 2026-09-08 se subio a 24 px, el minimo de la WCAG 2.2 (2.5.8), y el
+   2026-09-09 a los 44 px que exigen CLAUDE.md y las reglas del proyecto, que prevalecen
+   sobre la recomendacion de la habilidad ui-ux-pro-max. El valor vigente esta en la
+   seccion «Correcciones de la revision visual del 2026-09-09», al final de la hoja. */
+input[type=text], input[type=password], input[type=number], input[type=email], input[type=url], select { min-height: 36px; }
+/* Movimiento reducido: sin transiciones ni animaciones para quien lo pide */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
+}
+/* Pantallas estrechas (375 px): una columna, controles a todo el ancho, tablas con desplazamiento propio */
+@media (max-width: 480px) {
+  main { padding: 12px 10px 32px; }
+  .rejilla, .rejilla.c2, .rejilla.c3, .rejilla.c4, .rejilla.c5, .rejilla.dos-uno, .rejilla.uno-dos { grid-template-columns: 1fr; }
+  .titulo-pagina { flex-direction: column; }
+  .acciones-titulo, .acciones-titulo .btn, .filtros .campo, .filtros .btn { width: 100%; }
+  .filtros { flex-direction: column; align-items: stretch; }
+  .metrica .valor { font-size: 26px; }
+  .cabecera-interior { gap: 8px; }
+  .sesion { flex-wrap: wrap; }
+  .grafico-dona .grafico { width: min(100%, 180px); }
+}
+/* Identificadores (CVE, versiones) no se partan en pantallas estrechas: la tabla ya desplaza */
+td .mono, td.mono, .tabla-compacta a.mono { white-space: nowrap; }
+
+/* ===================================================================
+   Armazón de consola (2026-09-04, habilidad ui-ux-pro-max: navegación
+   predecible, secciones agrupadas, iconos SVG, búsqueda global, densidad alta)
+   =================================================================== */
+:root { --ancho-nav: 232px; --ancho-nav-colapsada: 64px; --alto-barra: 52px; }
+.consola { display: grid; grid-template-columns: var(--ancho-nav) minmax(0, 1fr); min-height: 100vh; }
+body.nav-colapsada .consola { grid-template-columns: var(--ancho-nav-colapsada) minmax(0, 1fr); }
+.area { display: flex; flex-direction: column; min-width: 0; }
+.area > main { max-width: 1600px; width: 100%; margin: 0 auto; padding: 20px 24px 48px; }
+
+/* Barra lateral */
+.nav-lateral {
+  position: sticky; top: 0; height: 100vh; overflow-y: auto; overflow-x: hidden;
+  background: var(--fondo-panel); border-right: 1px solid var(--borde);
+  display: flex; flex-direction: column; padding: 0 0 10px;
+}
+.nav-lateral::before { content: ""; display: block; height: 3px; background: linear-gradient(90deg, var(--acento), var(--secundario)); }
+.nav-lateral .marca { padding: 14px 16px 12px; border-bottom: 1px solid var(--borde); }
+.nav-lateral .marca-texto { overflow: hidden; }
+.nav-lateral .marca strong, .nav-lateral .marca span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav-lateral .nav { display: flex; flex-direction: column; gap: 2px; padding: 10px 10px; flex: 1; }
+.nav-grupo { padding: 6px 0 4px; }
+.nav-grupo + .nav-grupo { border-top: 1px solid var(--borde); margin-top: 4px; padding-top: 10px; }
+.nav-titulo { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--texto-tenue); font-weight: 600; padding: 0 10px 6px; white-space: nowrap; }
+.nav-lateral .nav a {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px; min-height: 36px;
+  border-radius: var(--radio-pequeno); border-bottom: 0; margin: 0;
+  color: var(--texto-suave); font-weight: 500; font-size: 13px; white-space: nowrap;
+  transition: background .15s, color .15s;
+}
+.nav-lateral .nav a svg { width: 18px; height: 18px; flex: 0 0 18px; }
+.nav-lateral .nav a:hover { background: var(--fondo-hover); color: var(--texto); text-decoration: none; }
+.nav-lateral .nav a.activo { background: var(--acento-claro); color: var(--acento); font-weight: 600; box-shadow: inset 3px 0 0 var(--acento); }
+.nav-pie { padding: 8px 10px 0; border-top: 1px solid var(--borde); display: flex; justify-content: flex-end; }
+.nav-colapsar svg { transition: transform .15s; }
+body.nav-colapsada .nav-colapsar svg { transform: rotate(180deg); }
+body.nav-colapsada .nav-lateral .marca-texto, body.nav-colapsada .nav-titulo, body.nav-colapsada .nav-lateral .nav a span { display: none; }
+body.nav-colapsada .nav-lateral .marca { justify-content: center; padding-left: 0; padding-right: 0; }
+body.nav-colapsada .nav-lateral .nav a { justify-content: center; padding: 8px 0; }
+body.nav-colapsada .nav-pie { justify-content: center; }
+
+/* Barra superior */
+.barra-superior {
+  position: sticky; top: 0; z-index: 40; min-height: var(--alto-barra);
+  display: flex; align-items: center; gap: 14px; padding: 6px 24px;
+  background: var(--fondo-panel); border-bottom: 1px solid var(--borde);
+}
+.seccion-actual { font-size: 13px; font-weight: 600; color: var(--texto); white-space: nowrap; }
+.busqueda-global { flex: 1; display: flex; align-items: center; gap: 8px; max-width: 520px; margin: 0 auto; position: relative; }
+.busqueda-global svg { position: absolute; left: 10px; width: 16px; height: 16px; color: var(--texto-tenue); pointer-events: none; }
+.busqueda-global input[type=search] {
+  width: 100%; min-height: 34px; padding: 6px 10px 6px 32px; border: 1px solid var(--borde-fuerte);
+  border-radius: 999px; background: var(--fondo-alt); color: var(--texto); font: inherit; font-size: 13px;
+}
+.busqueda-global input[type=search]:focus { background: var(--fondo-panel); }
+.barra-superior .sesion { margin-left: auto; }
+.solo-movil { display: none; }
+
+/* Variación de una métrica frente al periodo anterior: flecha + texto, no solo color */
+.variacion { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; font-size: 12px; font-weight: 600; margin-top: 6px; }
+.variacion .cifra { white-space: nowrap; }
+.variacion svg { width: 12px; height: 12px; }
+.variacion.sube { color: var(--critico-texto); }
+.variacion.baja { color: var(--exito-texto); }
+.variacion.igual { color: var(--texto-tenue); }
+.variacion .contexto { color: var(--texto-tenue); font-weight: 400; }
+
+/* Filtros rápidos: chips enlazables con estado activo */
+.chips-rapidos { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 12px; }
+.chips-rapidos .etiqueta-chips { font-size: 12px; color: var(--texto-tenue); margin-right: 2px; }
+.chips-rapidos a.chip { text-decoration: none; padding: 4px 11px; min-height: 28px; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--texto-suave); transition: background .15s, color .15s; }
+.chips-rapidos a.chip:hover { background: var(--acento-claro); color: var(--acento); border-color: var(--acento); }
+.chips-rapidos a.chip.activo { background: var(--acento); border-color: var(--acento); color: #fff; font-weight: 600; }
+.chips-rapidos a.chip.critico.activo { background: var(--critico); border-color: var(--critico); }
+
+/* Estrecho: barra lateral como cajón */
+@media (max-width: 900px) {
+  .consola, body.nav-colapsada .consola { grid-template-columns: minmax(0, 1fr); }
+  .nav-lateral { position: fixed; left: 0; top: 0; bottom: 0; width: min(280px, 85vw); z-index: 60; transform: translateX(-100%); transition: transform .2s; box-shadow: var(--sombra-alta); }
+  body.nav-abierta .nav-lateral { transform: none; }
+  body.nav-abierta::after { content: ""; position: fixed; inset: 0; background: rgba(15, 27, 45, .45); z-index: 55; }
+  body.nav-colapsada .nav-lateral .marca-texto, body.nav-colapsada .nav-titulo, body.nav-colapsada .nav-lateral .nav a span { display: initial; }
+  body.nav-colapsada .nav-lateral .nav a { justify-content: flex-start; padding: 8px 10px; }
+  .nav-pie { display: none; }
+  .solo-movil { display: inline-flex; }
+  .barra-superior { padding: 6px 12px; gap: 10px; flex-wrap: wrap; }
+  .seccion-actual { flex: 1; }
+  .busqueda-global { order: 3; flex-basis: 100%; max-width: none; }
+  .area > main { padding: 14px 12px 32px; }
+}
+@media print { .nav-lateral, .barra-superior { display: none !important; } .consola { display: block; } }
+
+/* ---- Activos (OCS Inventory) y aplicabilidad por activo · 2026-09-04 ---- */
+.tabla-datos th { text-align: left; font-weight: 600; color: var(--texto-suave); width: 34%; white-space: nowrap; vertical-align: top; }
+.respuesta-cve { border: 1px solid var(--borde); border-left: 4px solid var(--borde-fuerte); border-radius: var(--radio-pequeno); padding: 12px 16px; background: var(--fondo-alt); }
+.respuesta-cve.afectado { border-left-color: var(--critico); background: var(--critico-fondo); }
+.respuesta-cve.afectado .veredicto { color: var(--critico-texto); }
+.respuesta-cve.no_afectado { border-left-color: var(--exito); background: var(--exito-fondo); }
+.respuesta-cve.no_afectado .veredicto { color: var(--exito-texto); }
+.respuesta-cve .veredicto { font-size: 17px; font-weight: 600; line-height: 1.35; }
+.lista-lineas { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: var(--texto-suave); line-height: 1.55; }
+.lista-lineas li { margin-bottom: 3px; }
+.lista-lineas li + li { margin-top: 2px; }
+.mt-14 { margin-top: 14px; }
+.minw-220 { min-width: 220px; }
+.minw-260 { min-width: 260px; }
+td .mono.envolver, .mono.envolver { white-space: normal; overflow-wrap: anywhere; }
+
+/* ---- Activos: filtro en el navegador, chips como botones, desplegable ---- */
+.chips-rapidos button.chip { font: inherit; cursor: pointer; text-decoration: none; padding: 4px 11px; min-height: 28px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--borde); border-radius: 999px; background: var(--fondo-panel); color: var(--texto-suave); font-size: 12px; }
+.chips-rapidos button.chip:hover { background: var(--acento-claro); color: var(--acento); border-color: var(--acento); }
+.chips-rapidos button.chip.activo { background: var(--acento); border-color: var(--acento); color: var(--texto-sobre-acento); font-weight: 600; }
+.chips-rapidos button.chip.critico.activo { background: var(--critico); border-color: var(--critico); }
+.chips-rapidos button.chip:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+button.enlace { font: inherit; background: none; border: 0; padding: 0; color: var(--acento); text-decoration: underline; cursor: pointer; min-height: 0; }
+button.enlace:hover { color: var(--acento-hover); }
+/* Botón de recuento de vulnerabilidades: sobrio en reposo (solo la cifra en rojo),
+   para que en una tabla de cientos de filas no compita con la insignia KEV. */
+.btn.peligro-suave { border-color: var(--borde-fuerte); color: var(--critico-texto); background: var(--fondo-panel); font-weight: 600; font-variant-numeric: tabular-nums; }
+.btn.peligro-suave:hover, .btn.peligro-suave[aria-expanded="true"] { background: var(--critico-fondo); border-color: var(--critico); }
+tr.fila-detalle > td { background: var(--fondo-alt); padding: 12px 16px 16px; border-bottom: 2px solid var(--borde-fuerte); }
+.detalle-cabecera { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; font-size: 13px; }
+.detalle-enlaces { display: flex; gap: 6px; }
+.tabla-vulns { background: var(--fondo-panel); }
+
+/* ---- Entornos: el color solo distingue expuesto (producción y contingencia, azul
+   corporativo) de no expuesto (gris). El nombre ya dice cuál es. ---- */
+.insignia.entorno-produccion, .insignia.entorno-contingencia { background: var(--acento-claro); color: var(--acento); font-weight: 600; }
+.insignia.entorno-desarrollo, .insignia.entorno-pruebas, .insignia.entorno-soporte { background: var(--fondo-hover); color: var(--texto-suave); }
+
+/* ---- Recorrido guiado ---- */
+.tour-fondo { position: fixed; inset: 0; z-index: 900; background: rgba(15, 27, 45, .45); }
+.tour-foco { position: absolute; z-index: 901; border-radius: 10px; pointer-events: none;
+  box-shadow: 0 0 0 3px var(--acento), 0 0 0 6px rgba(255, 255, 255, .55), 0 0 0 9999px rgba(15, 27, 45, .45); transition: top .25s, left .25s, width .25s, height .25s; }
+.tour-destacado { position: relative; z-index: 901; }
+.tour-caja { position: absolute; z-index: 902; background: var(--fondo-panel); color: var(--texto); border: 1px solid var(--borde);
+  border-radius: var(--radio); box-shadow: var(--sombra-alta); padding: 14px 18px 16px; }
+.tour-caja.arriba::after, .tour-caja::before { content: ""; position: absolute; left: 22px; border: 8px solid transparent; }
+.tour-caja::before { top: -16px; border-bottom-color: var(--fondo-panel); }
+.tour-caja.arriba::before { display: none; }
+.tour-caja.arriba::after { bottom: -16px; border-top-color: var(--fondo-panel); }
+.tour-cabecera { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.tour-paso { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--acento); }
+.tour-cerrar { font: inherit; font-size: 20px; line-height: 1; background: none; border: 0; color: var(--texto-tenue); cursor: pointer; padding: 2px 6px; border-radius: 4px; min-height: 0; }
+.tour-cerrar:hover, .tour-cerrar:focus-visible { color: var(--texto); background: var(--fondo-hover); outline: none; }
+.tour-titulo { font-size: 16px; font-weight: 600; margin: 6px 0 6px; }
+.tour-texto { margin: 0 0 12px; font-size: 13.5px; line-height: 1.55; color: var(--texto-suave); }
+.tour-barra { height: 4px; background: var(--fondo-hover); border-radius: 2px; overflow: hidden; margin-bottom: 12px; }
+.tour-progreso { height: 100%; background: var(--acento); }
+.tour-acciones { display: flex; justify-content: flex-end; gap: 8px; }
+.tour-sugerencia { position: absolute; top: 100%; right: 16px; z-index: 50; margin-top: 6px; max-width: 360px; background: var(--fondo-panel); color: var(--texto);
+  border: 1px solid var(--borde); border-left: 4px solid var(--acento); border-radius: var(--radio); box-shadow: var(--sombra-alta); padding: 12px 14px; font-size: 13px; line-height: 1.5; }
+.tour-sugerencia-acciones { display: flex; gap: 8px; margin-top: 10px; }
+.barra-superior { position: relative; }
+.tour-boton-pulso { box-shadow: 0 0 0 0 var(--acento); animation: tour-pulso 1.8s ease-out 3; }
+@keyframes tour-pulso { 0% { box-shadow: 0 0 0 0 rgba(31, 78, 121, .6); } 100% { box-shadow: 0 0 0 10px rgba(31, 78, 121, 0); } }
+@media (prefers-reduced-motion: reduce) { .tour-boton-pulso { animation: none; } .tour-foco { transition: none; } }
+body.tour-activo { overflow-x: hidden; }
+
+/* ---- Tabla de activos: anchos fijos para que ninguna columna se coma a las demás ---- */
+.tabla-activos { table-layout: fixed; width: 100%; }
+/* Nueve columnas desde el 2026-09-07: el tipo, el entorno y el proceso van separados.
+   La tabla es de ancho fijo, asi que cada columna necesita su porcentaje; los nueve suman
+   100. Sin declarar las dos nuevas, se quedaban sin anchura y el contenido se apilaba. */
+.tabla-activos .col-activo { width: 19%; } .tabla-activos .col-tipo { width: 9%; }
+.tabla-activos .col-entorno { width: 9%; } .tabla-activos .col-proceso { width: 11%; }
+.tabla-activos .col-sistema { width: 14%; } .tabla-activos .col-fecha { width: 10%; }
+.tabla-activos .col-software { width: 7%; } .tabla-activos .col-vulns { width: 9%; }
+.tabla-activos .col-hallazgos { width: 12%; }
+.tabla-activos td { vertical-align: top; overflow-wrap: anywhere; }
+.tabla-activos td .insignia { white-space: normal; text-align: left; line-height: 1.3; margin-top: 3px; }
+.tabla-activos a.envolver { overflow-wrap: anywhere; }
+@media (max-width: 1100px) { .tabla-activos { table-layout: auto; min-width: 1080px; } }
+/* Aviso del recorrido: abajo a la IZQUIERDA desde el 2026-09-10. Estaba abajo a la
+   derecha y ahí tapaba la vista previa pegada de Informes, que es justo lo que la persona
+   está mirando mientras elige los apartados (medido: cubría las cifras y el esquema).
+   A la izquierda solo convive con el botón de plegar la barra lateral, y por eso se
+   levanta lo suficiente para no pisarlo. */
+.tour-sugerencia { position: fixed; top: auto; left: 20px; right: auto; bottom: 76px;
+  margin-top: 0; z-index: 60; }
+@media (max-width: 980px) { .tour-sugerencia { left: 16px; right: 16px; max-width: none; bottom: 16px; } }
+/* Recorrido completo: enlace discreto en la tarjeta del recorrido por sección (v6). */
+.tour-acciones .tour-completo { margin-right: auto; font-size: 12px; }
+.tour-sugerencia strong { display: block; margin-bottom: 4px; }
+/* Segundo factor (v6): código QR de la aplicación de códigos y códigos de recuperación. */
+.qr { display: inline-block; max-width: 100%; height: auto; border: 1px solid var(--borde); border-radius: 6px; background: #ffffff; padding: 6px; }
+.lista-lineas.mono li { font-size: 15px; letter-spacing: .04em; }
+
+/* Contraseña generada, mostrada una sola vez (Usuarios, 2026-09-08): panel destacado con
+   borde de acento, el valor en monoespaciada y grande para leerlo sin errores, y las
+   acciones alineadas con el campo. Objetivos de 44 px como el resto de botones. */
+.credencial-una-vez { border-left: 4px solid var(--acento); }
+.credencial-una-vez .credencial-valor { font-size: 18px; letter-spacing: .04em; font-weight: 600; }
+.credencial-una-vez .credencial-acciones { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+.credencial-una-vez .credencial-acciones .btn { min-height: 44px; }
+
+/* Explicacion de para que sirven las reglas del mapa de nombres (Software, 2026-09-08):
+   texto de lectura dentro de un cuerpo de panel sin relleno, con margen propio. */
+.explicacion-reglas { margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--borde); line-height: 1.55; max-width: 90ch; }
+
+/* Módulo de informes y serie anual de Tendencias (2026-09-08). El botón que genera y
+   descarga el informe es la acción principal de su fila y de la cabecera de Tendencias:
+   objetivo táctil de 44 px (habilidad ui-ux-pro-max), como el resto de acciones esenciales. */
+.tabla-informes td.accion-informe { white-space: nowrap; }
+.tabla-informes .btn-informe, .form-informe .btn { min-height: 44px; }
+.tabla-informes td .insignia + .pequeno { margin-left: 6px; }
+/* Segunda cabecera dentro del panel de la serie anual: separa los doce meses del año
+   elegido de la tabla de años sin abrir otro panel (misma consulta, mismo bloque). */
+.panel-cabecera.serie-anual-detalle { border-top: 1px solid var(--borde); }
+.panel-cabecera h3 { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.panel-cabecera > .filtros { margin-left: auto; }
+
+/* Alcance del grupo «Inventario» para los perfiles acotados (2026-09-08): no es otro titulo. */
+.nav-titulo .nav-alcance { text-transform: none; letter-spacing: 0; font-weight: 500; }
+
+/* Remediación: una actualización por origen de paquete (2026-09-09). El nombre de la fila
+   («Núcleo Linux 6.8.0-60-generic», «sssd y 17 paquetes más») va en negrita para que se
+   lea antes que las versiones, y la lista de paquetes de la fusión se despliega con
+   <details> (HTML puro, sin JavaScript): objetivo táctil del summary de 24 px como el
+   resto (WCAG 2.2, 2.5.8), foco visible con el contorno de acento y texto legible
+   (12 px sobre el color suave, contraste 4,5:1). La cantidad de paquetes va siempre en
+   texto: no se depende del color ni del icono del desplegable. */
+.nombre-actualizacion { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
+.paquetes-fusion { margin-top: 4px; }
+.paquetes-fusion > summary { font-size: 12px; color: var(--texto-suave); cursor: pointer; }
+.paquetes-fusion > summary:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; border-radius: 3px; }
+.paquetes-fusion .lista-lineas { margin-top: 4px; font-size: 12px; }
+.paquetes-fusion .lista-lineas li { overflow-wrap: anywhere; }
+.paquetes-fusion .lista-lineas li .mono { white-space: normal; }
+/* La tabla de actualizaciones de la ficha del activo: la columna del nombre no se
+   estrecha por debajo de lo legible y las versiones no se parten por dentro. */
+.tabla-actualizaciones-activo th.col-actualizacion { min-width: 260px; }
+.tabla-actualizaciones-activo td .mono { white-space: nowrap; }
+
+
+/* ===================================================================
+   Correcciones de la revision visual del 2026-09-09
+   (capturas en tema claro y oscuro a 1440 px; medidas sobre el HTML renderizado
+   con Chrome sin interfaz. Cada regla dice que media corrige.)
+   =================================================================== */
+
+/* 1. Cabeceras de FILA («th scope=row») del cuerpo de la tabla. La regla general de «th»
+   las trataba como cabeceras de columna: mayusculas, 11 px, una sola linea, fondo
+   alternativo y «position: sticky», que en el cuerpo de la tabla no significa nada.
+   Consecuencias medidas: en «Avance por tipo de maquina» la celda «Equipos de computo /
+   263 equipos de computo con pendientes» ocupaba 308,8 px sin poder partirse y la tabla
+   media 1.340,3 px dentro de un envoltorio de 1.143 px, con la barra de progreso fuera
+   del panel. Con esta regla la celda parte en varias lineas y la tabla cabe. */
+tbody th {
+  text-transform: none; letter-spacing: normal; white-space: normal;
+  font-size: 13px; background: transparent; position: static; z-index: auto;
+}
+/* La tabla compacta lleva 12 px como el resto de su texto. */
+.tabla-compacta tbody th { font-size: 12px; }
+/* Y sus cabeceras de columna admiten varias lineas: con «white-space: nowrap» un rotulo
+   con su unidad («Vulnerabilidades que resuelve», «Acciones sobre la actualizacion»)
+   estiraba la columna y sacaba la tabla del envoltorio. Medido: la tabla de Remediacion
+   pasaba de 1.143 px de envoltorio a 1.367,7 px de tabla solo por los rotulos. */
+.tabla-compacta thead th { white-space: normal; }
+
+/* 2. Anchos minimos de columna. Las tablas de Remediacion y de la ficha del activo
+   declaraban minimos que sumaban mas de lo que cabe (tabla de 1.319 px en un envoltorio
+   de 1.143 px) y lo que quedaba cortado era la columna de acciones: el boton «Ya se
+   actualizo: comprobar las 29» y el identificador de la remediacion. Estos son los
+   valores con los que la suma de minimos mas el relleno de las celdas cabe. */
+.minw-100 { min-width: 100px; }
+.minw-110 { min-width: 110px; }
+.minw-120 { min-width: 120px; }
+.minw-140 { min-width: 140px; }
+.minw-180 { min-width: 180px; }
+.minw-200 { min-width: 200px; }
+.minw-230 { min-width: 230px; }
+.minw-240 { min-width: 240px; }
+
+/* 3. Objetivo tactil de 44 px (CLAUDE.md y .claude/skills/reglas-proyecto/SKILL.md, que
+   prevalecen sobre la recomendacion de 24 px de la habilidad ui-ux-pro-max). Medido antes:
+   «summary» 26,6 px, «.btn.pequeno» 30 px, «.btn» 34 px y los botones de icono 30 x 30 px.
+   El contenido se centra con el relleno vertical para no perder el triangulo del
+   desplegable, que es su unica senal de que se puede abrir. */
+.btn { min-height: 44px; }
+.btn.pequeno { min-height: 44px; padding: 6px 12px; }
+.btn-icono, .btn.pequeno.btn-icono { width: 44px; height: 44px; padding: 0; }
+.chips-rapidos button.chip, .chips-rapidos a.chip { min-height: 44px; }
+summary { min-height: 44px; padding: 12px 0; box-sizing: border-box; }
+/* 4. El desplegable se ve accionable: color de acento y subrayado al pasar por encima o
+   al enfocar con el teclado. Antes era texto gris indistinguible del resto de la celda. */
+summary:hover, summary:focus-visible { color: var(--acento); text-decoration: underline; }
+.paquetes-fusion > summary:hover, .paquetes-fusion > summary:focus-visible { color: var(--acento); }
+/* Un summary dentro de una celda estrecha no crece de mas si su texto cabe en una linea. */
+.tabla-compacta td > details > summary { line-height: 1.4; }
+
+/* 5. Cabeceras de la tabla de Activos en dos lineas. «Ultimo inventario» se leia con
+   17 px cortados (114 px de ancho para 131 px de texto) y «Vulnerabilidades» con 29 px
+   cortados (103 px para 132 px), porque «th» impone una sola linea. */
+.tabla-activos thead th { white-space: normal; }
+/* Y la columna de vulnerabilidades con anchura suficiente para el boton «1.016 · ver» y
+   la insignia «KEV 7» (47,8 px), que se cortaba a «KE»: la insignia baja a su propia
+   linea y la columna gana dos puntos porcentuales, que salen del tipo y de hallazgos.
+   Los nueve porcentajes siguen sumando 100. */
+.tabla-activos .col-tipo { width: 8%; }
+.tabla-activos .col-vulns { width: 12%; }
+.tabla-activos .col-hallazgos { width: 10%; }
+.tabla-activos td.col-vulns-celda { white-space: normal; }
+.tabla-activos td.col-vulns-celda .btn { white-space: nowrap; }
+.tabla-activos td.col-vulns-celda .insignia {
+  display: block; width: fit-content; white-space: nowrap; margin-top: 4px;
+}
+
+/* Una entrada por actualizacion en la ficha del activo (2026-09-09). La ULTIMA version a
+   la que hay que actualizar es la accion de la fila: se lee antes que nada. Peticion
+   literal del usuario: «que la remediacion indique si o si la ultima version a la que se
+   debe actualizar y no una por una». El color no es la unica senal: el texto dice
+   «Actualizar a» y la cola de versiones marca la primera con su explicacion. */
+.version-objetivo {
+  margin-top: 4px; font-size: 13px; font-weight: 600; color: var(--critico-texto);
+  overflow-wrap: anywhere;
+}
+.version-objetivo .mono { font-weight: 700; }
+/* Cola de versiones solicitadas: la que hay que instalar, destacada con un filete de
+   acento; las demas quedan como historia de lo que pidio cada aviso. */
+.cola-versiones > li { margin-bottom: 6px; }
+.cola-versiones > li.cola-objetivo {
+  border-left: 3px solid var(--critico); padding-left: 8px; margin-left: -11px;
+}
+
+/* ------------------------------------------------------------------
+   Generador de informes a medida (/informes/, 2026-09-10)
+   ------------------------------------------------------------------
+   El usuario pidió «poder crear informes personalizados y tener plantillas de informes
+   preconfiguradas». La página pasó de una tabla de meses a un formulario largo: tarjetas
+   de plantilla, apartados con su explicación, vista previa y enlace copiable. Todas las
+   reglas son de disposición y borde; el color solo aparece para marcar la plantilla en
+   uso (acento de marca), nunca como única señal: la tarjeta activa lleva además la
+   insignia «En uso» y las casillas llevan su etiqueta escrita.
+   Objetivos táctiles de 44 px en los botones que generan o copian (habilidad
+   ui-ux-pro-max) y foco visible heredado de los controles del proyecto. */
+.tarjeta-plantilla {
+  border: 1px solid var(--borde); border-radius: var(--radio);
+  padding: 14px 16px; background: var(--fondo-panel);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.tarjeta-plantilla.activa { border-color: var(--acento); border-left-width: 3px; }
+.tarjeta-plantilla h3 { margin: 0; font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
+.tarjeta-plantilla p { margin: 0; }
+.tarjeta-plantilla .descripcion { font-size: 13px; color: var(--texto-suave); line-height: 1.5; }
+.tarjeta-plantilla .btn, .tarjeta-plantilla .insignia { align-self: flex-start; margin-top: auto; }
+.tarjeta-plantilla .btn { min-height: 34px; }
+
+/* Formulario del generador: los grupos van en fieldset con su leyenda visible, y cada
+   apartado del documento lleva la explicación debajo de su etiqueta (regla «Visible
+   labels» y «Helper text» de la base de conocimiento de interfaz). */
+.formulario-informe fieldset { margin-bottom: 16px; }
+.formulario-informe fieldset:last-of-type { margin-bottom: 8px; }
+.formulario-informe .campo-fila > .campo { margin-bottom: 0; }
+.formulario-informe .campo-fila { margin-bottom: 4px; }
+.apartados-informe { gap: 10px 24px; margin-bottom: 4px; }
+.apartados-informe .casilla { margin: 0; }
+.apartados-informe .casilla label { line-height: 1.4; }
+.apartados-informe .casilla label .ayuda { display: block; margin-top: 2px; font-weight: 400; }
+.apartados-informe .casilla label .insignia { margin-left: 6px; }
+
+.acciones-formulario { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.acciones-formulario .btn.primario { min-height: 44px; }
+.acciones-formulario > form { margin: 0; }
+
+/* Enlace de la selección: campo de solo lectura ancho y su botón de copia al lado. El
+   valor se puede seleccionar a mano si el navegador no permite el portapapeles (app.js
+   deja el texto seleccionado y lo dice en el propio botón). */
+.enlace-informe { margin-bottom: 0; flex: 1 1 420px; min-width: 260px; }
+.enlace-informe-fila { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.enlace-informe-fila input[type=text] { flex: 1 1 240px; min-width: 0; font-family: var(--mono); font-size: 12px; }
+.enlace-informe-fila .btn { min-height: 44px; }
+/* Tarjetas de cifras dentro del cuerpo de un panel (vista previa del informe): fondo
+   alterno para que se distingan del panel que las contiene sin añadir otro borde. */
+.panel-cuerpo > .rejilla > .panel.metrica { background: var(--fondo-alt); }
+
+/* ------------------------------------------------------------------
+   Informes: el formulario a la izquierda y la vista previa pegada a la derecha
+   (2026-09-10)
+   ------------------------------------------------------------------
+   Queja literal del usuario: «no veo lo que pedí del apartado de informes, de
+   previsualizar la construcción de informes según lo que yo vaya escogiendo». La vista
+   previa existía y se actualizaba sola, pero empezaba en el píxel 2.574 del documento
+   (medido a 1.440 px de ventana): quien marcaba un apartado arriba tenía el resultado a
+   casi tres pantallas de distancia y no lo veía. Desde hoy, en pantallas anchas la
+   pantalla es de dos columnas: a la izquierda lo que se elige (punto de partida y
+   formulario) y a la derecha, pegada al desplazamiento, la vista previa con las cifras y
+   el esquema del documento. En pantallas estrechas se apilan en el mismo orden de antes
+   (elegir primero, vista previa después), que es lo que pidió el usuario.
+   Reglas de la habilidad ui-ux-pro-max que se respetan: el panel pegado nunca tapa
+   contenido (se descuenta la altura de la barra superior, «Sticky Navigation»), no se
+   apilan elementos fijos (la barra superior es el único, «Fixed Positioning»), la lista
+   larga tiene su propio desplazamiento en vez de empujar la página, y el botón de generar
+   se queda siempre a la vista al pie del panel con sus 44 px de alto. */
+.disposicion-informe { display: grid; gap: 18px; align-items: start; }
+
+/* Rejilla de apartados: reparte el espacio de verdad. Con minmax(340px) una columna de
+   formulario de 629 px se quedaba en UNA sola columna y los doce apartados formaban una
+   lista larguísima; con 240 px caben dos columnas cómodas tanto a pantalla completa como
+   dentro de la columna izquierda. */
+.rejilla.apartados-informe { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+
+/* El esquema ya escribe la numeración REAL del documento («1. Resumen ejecutivo»), y hay
+   apartados que no se numeran (portada e índice), así que la lista no pinta además su
+   propio número: con los dos a la vez se leía «1. 1. Resumen ejecutivo», que parece un
+   error. Sigue siendo <ol> porque el orden es parte del dato. */
+.esquema-informe { list-style: none; padding-left: 0; }
+
+/* La vista previa es una pila vertical: lo que se lee (cifras, esquema, detalle, enlace)
+   y, al pie, la acción. En una sola columna no cambia nada respecto de antes. */
+.vista-previa-zona { display: flex; flex-direction: column; min-height: 0; }
+.previa-desplazable { min-height: 0; }
+.previa-generar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.previa-generar > form { margin: 0; }
+.previa-generar .btn.primario { min-height: 44px; }
+.previa-generar .ayuda { margin-top: 0; flex: 1 1 260px; }
+
+@media (min-width: 1180px) {
+  .disposicion-informe { grid-template-columns: minmax(0, 1.6fr) minmax(320px, 1fr); }
+  .columna-informe-resumen > .panel { margin-bottom: 0; }
+  /* Las cifras, en columna estrecha, se leen mejor como filas compactas (número grande,
+     etiqueta al lado y la nota debajo a todo el ancho) que como cuatro tarjetas
+     apretadas: el número sigue siendo lo primero que se ve y la nota completa cabe. */
+  .columna-informe-resumen .rejilla.c4 { grid-template-columns: minmax(0, 1fr); gap: 6px; margin-bottom: 0; }
+  .columna-informe-resumen .panel.metrica {
+    display: grid; grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 10px; align-items: baseline; padding: 6px 12px 7px 14px;
+  }
+  .columna-informe-resumen .metrica .valor { font-size: 21px; }
+  .columna-informe-resumen .metrica .etiqueta { margin-top: 0; }
+  .columna-informe-resumen .metrica .nota { grid-column: 1 / -1; margin-top: 3px; }
+  .columna-informe-resumen .panel-cuerpo { padding: 12px 14px; }
+  /* El esquema, en la columna pegada, es la lista numerada a secas: la explicación de
+     cada apartado está a la vista en el formulario de al lado, y sin repetirla caben los
+     doce apartados enteros (medido el 2026-09-10: la lista pasa de 983 px a 262 px, así
+     que se ve cómo se reordena sin desplazarse dentro del panel). */
+  .columna-informe-resumen .esquema-informe .descripcion-apartado { display: none; }
+  .columna-informe-resumen .esquema-informe > li { margin-bottom: 2px; }
+  .columna-informe-resumen .detalle-lista { font-size: 12px; gap: 5px 12px; }
+}
+/* El panel solo se pega y solo se limita en alto cuando la ventana da de sí (700 px o
+   más): un elemento pegado más alto que la ventana escondería su parte de abajo sin
+   manera de llegar a ella, y en una ventana baja (portátil pequeño o navegador con muchas
+   barras) es preferible que la vista previa se desplace con la página, como un panel
+   normal. */
+@media (min-width: 1180px) and (min-height: 700px) {
+  .columna-informe-resumen { position: sticky; top: calc(var(--alto-barra) + 12px); }
+  .columna-informe-resumen > .panel {
+    display: flex; flex-direction: column;
+    max-height: calc(100vh - var(--alto-barra) - 24px);
+  }
+  /* Lo que se lee se desplaza dentro del panel: el esquema largo no empuja la página ni
+     esconde el botón de generar, que queda fijo al pie. */
+  .columna-informe-resumen .previa-desplazable { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
+  .columna-informe-resumen .previa-generar { flex: 0 0 auto; }
+}
+
+/* Al imprimir no hay ventana que seguir: el panel deja de estar pegado y de limitar su
+   alto, y el esquema recupera la explicación de cada apartado. Sin esto, una impresión
+   de la pantalla cortaría la vista previa a la altura de la ventana. */
+@media print {
+  .disposicion-informe { display: block; }
+  .columna-informe-resumen { position: static; }
+  .columna-informe-resumen > .panel { display: block; max-height: none; }
+  .columna-informe-resumen .previa-desplazable { overflow: visible; }
+  .columna-informe-resumen .esquema-informe .descripcion-apartado { display: inline; }
+}
+
+/* ===================================================================
+   Correcciones de la revisión de claridad de la operación (2026-09-15)
+   Cada regla dice qué medida corrige. Medido con el navegador sin interfaz
+   contra una copia de la base real, a 1.440 y a 390 píxeles.
+   =================================================================== */
+
+/* 13. Bloques con una orden reproducible («pre»). La hoja NO tenía ninguna regla para
+   «pre», así que un bloque de texto preformateado empujaba la página entera: la orden de
+   auditoría de configuración de la ficha del activo mide 634 píxeles de contenido en una
+   caja de 530, y por esa diferencia /activos/511 medía 1.488 píxeles a 1.440 (y 663 a
+   390), con la última columna de la tabla —la de los botones de acción— fuera de la
+   pantalla. Con desplazamiento propio el bloque nunca desborda a su contenedor. */
+pre { margin: 0; max-width: 100%; overflow-x: auto; }
+/* Las órdenes largas, además, con foco visible: se pueden recorrer con el teclado
+   (llevan «tabindex="0"» en la plantilla), y un contenedor desplazable que no se puede
+   enfocar deja su contenido inalcanzable sin ratón (WCAG 2.1, 2.1.1). */
+.orden-larga {
+  padding: 10px 12px; border: 1px solid var(--borde); border-radius: var(--radio);
+  background: var(--fondo-alt); overscroll-behavior-x: contain;
+}
+.orden-larga:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+
+/* 13 bis. El motivo por el que una remediación quedó congelada («El activo ya no figura
+   en OCS Inventory») se lee ahora en la columna «Estado», que es «nowrap» para que las
+   insignias no se partan. El texto del motivo sí tiene que partirse, y con una medida
+   corta: sin esta regla heredaba «nowrap» y estiraba la columna 260 píxeles. */
+.motivo-estado { white-space: normal; overflow-wrap: anywhere; max-width: 26ch; }
+
+/* 8. Los dos paneles técnicos de la ficha del activo (componentes internos de las
+   aplicaciones y auditoría de configuración segura) van dentro de un «details» cerrado.
+   Se estiliza como un panel para que no parezca un enlace suelto, y el resumen cumple el
+   objetivo táctil de 44 píxeles de alto con su relleno. */
+.bloque-tecnico {
+  background: var(--fondo-panel); border: 1px solid var(--borde);
+  border-radius: var(--radio); margin-bottom: 18px;
+}
+.bloque-tecnico > summary {
+  padding: 13px 16px; cursor: pointer; font-size: 13px; color: var(--texto);
+  min-height: 44px; display: flex; align-items: center; gap: 8px;
+}
+.bloque-tecnico > summary:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; border-radius: var(--radio); }
+.bloque-tecnico > summary:hover { background: var(--fondo-hover); border-radius: var(--radio); }
+.bloque-tecnico > p { margin: 0 16px 12px; }
+.bloque-tecnico[open] > summary { border-bottom: 1px solid var(--borde); border-radius: var(--radio) var(--radio) 0 0; }
+.bloque-tecnico > .rejilla { padding: 0 16px 16px; }
+
+/* 9. Las cabeceras de tabla que llevan su unidad en una segunda línea («Software
+   clasificado / de total instalado»): la segunda línea va debajo, no detrás. */
+th .pequeno.tenue { display: block; font-weight: 400; text-transform: none; letter-spacing: normal; }
+
+
+/* ===================================================================
+   Revisión de claridad de Activos, Remediación, Correcciones pendientes,
+   Excepciones e Informes (2026-09-15) — cierre
+   Medido con el navegador sin interfaz contra una copia de la base real
+   (881 activos, 204 retirados), a 1.440 y a 390 píxeles de ancho.
+   =================================================================== */
+
+/* A. Desplegables de ayuda («Qué cuenta exactamente cada cifra» en el Panel y en
+   Amenazas, «Ver la tabla por sistema operativo y paquete», «Ver la lista de N activos»
+   y «Cómo verificarlo en la máquina» en la ficha de la amenaza).
+
+   Estos cuatro desplegables llevaban su estilo pegado en la plantilla con tres clases de
+   utilidad («pequeno suave cursor-pointer»), así que su tamaño de letra, su color y su
+   objetivo táctil dependían de que nadie olvidara escribir las tres en el siguiente
+   desplegable que se añadiera, y del alcance de la regla general «summary». Pasan a
+   tener nombre propio, igual que «.paquetes-fusion > summary»: el objetivo táctil de
+   44 píxeles de alto (regla del proyecto, por encima de los 24 de la recomendación
+   externa) y el foco visible quedan garantizados por la hoja y no por la plantilla.
+   Medido antes y después en «/», «/amenazas/» y «/amenazas/6111»: 44 píxeles de alto en
+   los siete desplegables de esas tres páginas, letra de 12 píxeles y color de texto
+   suave sobre el fondo del panel (contraste 8,9:1 en tema claro y 8,7:1 en tema
+   oscuro, por encima del 4,5:1 exigido). */
+.detalle-ayuda > summary {
+  font-size: 12px; color: var(--texto-suave); cursor: pointer;
+  min-height: 44px; padding: 12px 0; box-sizing: border-box;
+}
+.detalle-ayuda > summary:hover, .detalle-ayuda > summary:focus-visible { color: var(--acento); }
+.detalle-ayuda > summary:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; border-radius: 3px; }
+/* Dentro de una celda de tabla el desplegable no tiene que llevarse 44 píxeles de alto
+   por sí solo: la celda ya da el espacio y el objetivo táctil se cumple con el alto real
+   de la fila. Sin esto, «Cómo verificarlo en la máquina» estiraba cada fila de la tabla
+   de sistemas de la ficha de la amenaza. */
+.tabla-compacta td > .detalle-ayuda > summary { line-height: 1.4; }
+
+/* B. Tablas anchas de la ficha del activo y del plan de remediación, alcanzables con el
+   teclado. «.tabla-envoltorio» ya tenía «overflow-x: auto», pero un bloque que se
+   desplaza por dentro y no se puede enfocar deja su parte derecha sin manera de llegar
+   sin ratón (WCAG 2.1, criterio 2.1.1). Medido en la ficha del activo 511 (retirado de
+   OCS Inventory, 155 remediaciones congeladas): la tabla del detalle por vulnerabilidad
+   y paquete pide 1.324 píxeles en un hueco de 1.143 con la ventana a 1.440, y de 364 con
+   la ventana a 390, así que la última columna —la de los botones de acción— quedaba
+   siempre fuera. Las plantillas añaden «tabindex="0"», «role="region"» y la etiqueta;
+   aquí va el contorno de foco por dentro, para que el panel con esquinas redondeadas no
+   lo recorte, y la contención del desplazamiento, para que llegar al final de la tabla
+   no arrastre la página entera. */
+.tabla-envoltorio[tabindex] { overscroll-behavior-x: contain; }
+.tabla-envoltorio[tabindex]:focus-visible { outline: 2px solid var(--acento); outline-offset: -2px; }
+
+/* Nota bajo la leyenda de un gráfico (auditoría de tableros del 2026-09-15). Explica que la
+   leyenda suma solo las barras dibujadas y que un elemento puede contar en varias, que era
+   lo que hacía parecer que la leyenda contradecía a las tarjetas de la misma página. */
+.leyenda-nota { margin: 4px 0 0; max-width: var(--medida-texto, 70ch); line-height: 1.4; }
+
+/* Modal para activos afectados */
+.modal {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0, 0, 0, 0.6); display: flex;
+  align-items: center; justify-content: center; z-index: 1000;
+  padding: 1rem;
+}
+.modal.oculto { display: none; }
+.modal-paginacion.oculto { display: none; }
+.modal-contenido {
+  background: var(--fondo-panel); border-radius: 8px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  max-width: 90vw; max-height: 85vh; overflow: auto;
+  min-width: 300px; width: 100%; display: flex; flex-direction: column;
+}
+.modal-contenido.modal-ancho { max-width: min(96vw, 1100px); }
+.modal-cabecera {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.75rem;
+  padding: 1.5rem; border-bottom: 1px solid var(--borde);
+}
+.modal-cabecera h2 { margin: 0; font-size: 1.25rem; margin-right: auto; }
+.modal-cabecera svg { width: 16px; height: 16px; }
+.btn-cerrar {
+  background: none; border: none; font-size: 1.5rem;
+  cursor: pointer; color: var(--texto); padding: 0.25rem 0.5rem;
+  line-height: 1;
+}
+.btn-cerrar:hover { color: var(--acento); }
+.modal-cuerpo {
+  padding: 1.5rem; overflow-y: auto; flex: 1;
+}
+.modal-pie {
+  display: flex; gap: 1rem; justify-content: flex-end;
+  padding: 1.5rem; border-top: 1px solid var(--borde);
+}
+.cargando { text-align: center; color: var(--texto-suave); }
+
+/* Tabla de activos afectados, paginada y con buscador, sin exigir desplegar nada para
+   verla (petición del usuario: «no todos ven la opción de desplegar lista de manera
+   rápida»). Usa .tabla-compacta como el resto de la plataforma; la columna de
+   acciones (el botón «Comprobar» de la remediación) ya hereda alineación de
+   «td.acciones» (sección 5 de este fichero). */
+
+/* Botón de recorrido guiado: cuadrado y de la misma altura que los botones vecinos de
+   la barra superior. El objetivo táctil de 44 px es la regla del proyecto (sección 3
+   de este fichero, «.btn-icono, .btn.pequeno.btn-icono») y prevalece sobre cualquier
+   tamaño menor: medido en «Mi perfil» y en el selector de tema, ambos 44 px de alto. */
+.btn-tour {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.icono-tour {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+/* Selector de tema. display: inline-block en vez del inline-flex de «.btn»: un
+   <select> nativo con flexbox directo en el elemento provoca que algunos
+   navegadores (Chrome en Linux, visto en pruebas) cierren el menú desplegable
+   justo al abrirlo, porque el motor de flex interfiere con el popup nativo. */
+.selector-tema {
+  display: inline-block;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+/* Filtros y búsqueda en modal (y en el cuadro inline de la ficha de amenaza) */
+.modal-filtros {
+  padding: 1rem 1.5rem; display: flex; align-items: center; gap: 0.75rem;
+  border-bottom: 1px solid var(--borde);
+}
+.modal-filtros.sin-borde { border-bottom: none; padding: 0 0 1rem; }
+#modal-contador-activos { white-space: nowrap; }
+.campo-buscar-modal {
+  flex: 1;
+  padding: 0.75rem;
+  border: 1px solid var(--borde);
+  border-radius: 4px;
+  font-size: 0.875rem;
+  background: var(--fondo-entrada);
+  color: var(--texto);
+}
+.campo-buscar-modal:focus {
+  outline: none;
+  border-color: var(--acento);
+  box-shadow: 0 0 0 3px var(--acento-suave);
+}
+
+/* Paginación en modal */
+.modal-paginacion {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem 1.5rem;
+  border-top: 1px solid var(--borde);
+  font-size: 0.875rem;
+  color: var(--texto-suave);
+}
+#modal-info-pagina {
+  min-width: 200px;
+  text-align: center;
+}

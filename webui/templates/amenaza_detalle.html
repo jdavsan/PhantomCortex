@@ -1,0 +1,830 @@
+{% extends "base.html" %}
+{% block titulo %}{{ a.cve or 'Amenaza' }}{% endblock %}
+{% block contenido %}
+{#
+  Ficha de amenaza (sección 6 «Amenazas» de docs/DISENO_INTERFAZ_2026-09-03.md).
+  Orden de lectura: 1) qué es (título, CVE, severidad, insignias), 2) cuánto
+  importa (medidores de CVSS, EPSS y relevancia), 3) hitos (primera y última
+  vez vista, alerta, explotación confirmada), 4) a qué nos afecta (tecnologías
+  del inventario con veredicto de versión), 5) qué hacer (impacto y
+  remediación), 6) fuentes y datos técnicos.
+  Sin style= ni on*=: la CSP no admite nada en línea. Los medidores y el flujo
+  los genera graficos.py con colores por clase. Todo texto de la base de datos
+  (título, resumen, fuentes, tecnologías) pasa por el autoescape de Jinja; las
+  URL de terceros, por el filtro url_segura.
+#}
+{# La severidad de la amenaza se etiqueta con el filtro severidad_es («Crítica»);
+   los diccionarios de abajo cubren campos del inventario (criticidad en minúsculas
+   y exposición) que no tienen filtro propio. #}
+{% set criticidad_es = {'critical': 'Crítica', 'high': 'Alta', 'medium': 'Media', 'low': 'Baja'} %}
+{% set exposicion_es = {'internet': 'Internet', 'dmz': 'DMZ', 'interna': 'Red interna',
+                        'internal': 'Red interna', 'local': 'Local'} %}
+{% set veces = a.times_seen or 1 %}
+{% set relevancia = ((a.relevance or 0) | round(0) | int) %}
+{% set epss_pct = (a.epss_score * 100) if a.epss_score is not none else none %}
+{#
+  Recuentos de tecnologías (auditoría de tableros del 2026-09-15). La cabecera decía «2
+  tecnologías correlacionadas: 0 afectadas, 2 sin determinar» y la tabla enseñaba UNA sola
+  fila, porque la otra estaba por debajo del umbral de confianza y va a la nota «Menciones
+  sin prueba de exposición». Desde hoy el recuento de la cabecera cuenta EXACTAMENTE lo que
+  la tabla lista (tecs_exposicion, ya sin las descartadas por versión) y las menciones sin
+  prueba llevan su propio recuento, separado y con su nombre.
+#}
+{% set n_tec = a.technologies | length %}
+{% set tec_listadas = tecs_exposicion | length %}
+{% set tec_afectadas = tecs_exposicion | selectattr('version_verdict', 'equalto', 'affected') | list | length %}
+{% set tec_sin_determinar = tec_listadas - tec_afectadas %}
+{% set tec_descartadas = tecs_descartadas | length %}
+{% set tec_menciones = tecs_mencion | length %}
+{# Algunas fuentes RSS entregan el resumen con HTML crudo (<p>, <span style=…>).
+   Jinja lo escapa (no hay riesgo), pero se leería como código: si hay etiquetas
+   de cierre se eliminan con striptags; el texto plano conserva sus saltos. Como
+   el recolector trunca el resumen, la última etiqueta puede quedar sin cerrar
+   (un <span style=… sin cerrar): si el resto tras el último «<» parece una
+   etiqueta (letra o «/») y no se cierra, se corta ahí y se marca con «…». #}
+{% macro texto_limpio(t) -%}
+  {%- if t and '</' in t -%}
+    {%- set limpio = t | striptags -%}
+    {%- set corte = limpio.rfind('<') -%}
+    {%- set resto = limpio[corte + 1:corte + 2] -%}
+    {%- if corte >= 0 and '>' not in limpio[corte:] and (resto == '/' or resto.isalpha()) -%}
+      {{ limpio[:corte] | trim }}…
+    {%- else %}{{ limpio }}{% endif -%}
+  {%- else %}{{ t }}{% endif -%}
+{%- endmacro %}
+
+{# ============================================================ 1. qué es #}
+{# Zona viva (2026-09-10): toda la ficha se sustituye sola al cambiar el estado de la
+   amenaza, sin recargar la pantalla. Es la ficha ENTERA y no solo el panel de gestión
+   porque marcar un falso positivo puede desvincular tecnologías y recalcular la
+   relevancia, y entonces cambian también los medidores y el panel de tecnologías: dejar
+   la mitad de la pantalla con los datos viejos sería peor que recargar. Sin JavaScript el
+   formulario se envía como siempre y la página se recarga.
+   Contrato en docs/INTERACCION_SIN_RECARGA_2026-09-10.md. #}
+<div id="ficha-amenaza" data-zona-viva data-zona-nombre="Ficha de la amenaza" tabindex="-1">
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Ficha de una amenaza" data-tour-texto="Todo lo que se sabe de este aviso y, sobre todo, si nos afecta: qué tecnologías del inventario menciona, qué activos tienen de verdad la versión vulnerable y qué hacer.">
+  <div>
+    <div class="flex-8 mb-6">
+      <span class="insignia {{ a.severity | lower }}" title="Severidad según {{ a.severity_source | origen_es }}">{{ a.severity | severidad_es }}</span>
+      {% if a.in_kev %}
+        <span class="insignia kev" title="Known Exploited Vulnerabilities: catálogo de CISA de vulnerabilidades con explotación activa confirmada">KEV · explotación activa</span>
+      {% endif %}
+      {% if a.cve %}
+        <span class="mono">{{ a.cve }}</span>
+      {% else %}
+        <span class="insignia neutro" title="El aviso no cita un identificador CVE: suele ser una noticia o una campaña, no un fallo concreto">Sin CVE</span>
+      {% endif %}
+      {% if n_tec %}
+        <span class="insignia acento">{{ n_tec | numero }} tecnología{{ 's' if n_tec != 1 }} del inventario</span>
+      {% endif %}
+    </div>
+    <h1>{{ a.title_es or a.title_en }}</h1>
+    <p>
+      Detectada el {{ a.first_seen_at | fecha_es }} · periodo {{ a.month | mes_es }}
+      {%- if veces > 1 %} · vista {{ veces | numero }} veces{% endif %}
+      · severidad según {{ a.severity_source | origen_es }}.
+    </p>
+  </div>
+  <div class="acciones-titulo">
+    <a class="btn" href="{{ url_for('amenazas.lista') }}">Volver a la consulta</a>
+    {% if a.cve %}
+      <a class="btn" href="{{ url_for('amenazas.lista', q=a.cve, estado='todas') }}#resultados">Otros avisos del CVE</a>
+      <a class="btn primario" target="_blank" rel="noopener noreferrer"
+         href="https://nvd.nist.gov/vuln/detail/{{ a.cve }}">Ver en NVD</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if a.in_kev %}
+<div class="aviso error" role="alert">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 17h.01"/></svg>
+  <div><strong>Explotación activa confirmada.</strong>
+    Esta vulnerabilidad figura en el catálogo KEV de CISA: se está explotando en la práctica.
+    Debe tratarse como prioridad máxima independientemente de su puntuación CVSS.
+    {% if a.kev_due_date %}Plazo de corrección fijado por CISA: {{ a.kev_due_date | fecha_es }}.{% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ============================================================ gestión #}
+<div class="panel" data-tour="2" data-tour-titulo="Estado operativo" data-tour-texto="Marque en qué punto está la amenaza para el equipo: nueva, en análisis, mitigada, aceptada, descartada o falso positivo. Al marcar un falso positivo puede ajustar el inventario para que el caso no se repita.">
+  <div class="panel-cabecera">
+    <h2>Gestión</h2>
+    <span class="sub">¿En qué punto está esta amenaza para el equipo y por qué se alertó o no?</span>
+  </div>
+  <div class="panel-cuerpo">
+    <div class="flex-8 mb-6">
+      <span class="insignia {% if a.estado in estados_cerrados %}neutro{% elif a.estado in ('mitigada', 'aceptada') %}ok{% elif a.estado == 'en_analisis' %}info{% else %}acento{% endif %}">{{ a.estado | estado_amenaza_es }}</span>
+      {% if a.estado_at %}<span class="pequeno tenue">desde el {{ a.estado_at | fecha_es }}{% if a.estado_por %} por {{ a.estado_por }}{% endif %}</span>{% endif %}
+      {% if a.alerted_at %}
+        <span class="pequeno tenue">· alertada por correo el {{ a.alerted_at | fecha_es }}</span>
+      {% elif a.alert_skip_reason %}
+        <span class="pequeno txt-medio">· {{ a.alert_skip_reason | motivo_no_alerta_es }}</span>
+      {% else %}
+        <span class="pequeno tenue">· pendiente de evaluar para la alerta diaria</span>
+      {% endif %}
+    </div>
+    {% if a.estado_motivo %}<p class="pequeno suave">Motivo: {{ a.estado_motivo }}</p>{% endif %}
+    {% if puede_operar_amenazas %}
+    <form method="post" action="{{ url_for('amenazas.cambiar_estado', threat_id=a.id) }}" class="mt-12"
+          data-accion-viva="ficha-amenaza" data-accion-espera="Guardando el estado…">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="campo-fila">
+        <div class="campo">
+          <label for="estado">Estado</label>
+          <select id="estado" name="estado">
+            {% for e in estados %}<option value="{{ e }}" {% if e == (a.estado or 'nueva') %}selected{% endif %}>{{ estado_es[e] }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="campo flex2">
+          <label for="motivo">Motivo (opcional)</label>
+          <input type="text" id="motivo" name="motivo" maxlength="500" placeholder="Por qué se cambia el estado">
+        </div>
+      </div>
+      {#
+        Plegado y cerrado (2026-09-15): estos ajustes solo sirven si el estado elegido es
+        «Falso positivo», y estaban siempre desplegados —con dos casillas por cada
+        tecnología— aunque la amenaza estuviera en «Nueva», que es el caso normal. Se
+        pliega con <details>, HTML puro: la política de seguridad de contenido no admite
+        scripts en línea y el desplegable sigue enviando sus casillas con el formulario.
+      #}
+      {% if a.technologies %}
+      <details{% if a.estado == 'falso_positivo' %} open{% endif %}>
+      <summary class="pequeno suave cursor-pointer">Si marca «Falso positivo»: ajustes para que no se repita</summary>
+      <fieldset>
+        <legend>Si es un falso positivo</legend>
+        <p class="pequeno suave m-0">Estos ajustes solo se aplican cuando el estado elegido es «Falso positivo». Evitan que el mismo caso vuelva a correlacionarse.</p>
+        {% for t in a.technologies %}
+        <div class="casilla">
+          <input type="checkbox" id="ctx-{{ loop.index }}" name="contexto" value="{{ t.slug }}|{{ t.matched_alias }}">
+          <label for="ctx-{{ loop.index }}">No volver a correlacionar «{{ t.matched_alias }}» con {{ t.name }} salvo que el texto hable de una vulnerabilidad</label>
+        </div>
+        <div class="casilla">
+          <input type="checkbox" id="des-{{ loop.index }}" name="desvincular" value="{{ t.slug }}">
+          <label for="des-{{ loop.index }}">Quitar la relación de esta amenaza con {{ t.name }} y recalcular su relevancia</label>
+        </div>
+        {% endfor %}
+      </fieldset>
+      </details>
+      {% endif %}
+      <button class="btn primario" type="submit">Guardar estado</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{# ===================================================== 2. cuánto importa #}
+<div class="rejilla c3">
+  <div class="panel" data-tour="3" data-tour-titulo="Puntuación CVSS" data-tour-texto="De 0 a 10, publicada por NVD. Es la gravedad en abstracto, igual para todas las organizaciones.">
+    <div class="panel-cabecera">
+      <h2>Gravedad técnica</h2>
+      <span class="sub">¿Qué puntuación oficial <abbr title="Common Vulnerability Scoring System: puntuación oficial de gravedad técnica, de 0 a 10">CVSS</abbr> tiene la vulnerabilidad, de 0 a 10?</span>
+    </div>
+    <div class="panel-cuerpo centrado">
+      {{ graficos.medidor(a.cvss_score, 10, etiqueta="CVSS", decimales=1,
+                          umbrales=[(4, "bajo"), (7, "medio"), (9, "alto"), (99, "critico")]) }}
+      <div class="mt-8"><strong>
+        {%- if a.cvss_score is none %}Sin puntuación oficial
+        {%- elif a.cvss_score < 4 %}Gravedad técnica baja
+        {%- elif a.cvss_score < 7 %}Gravedad técnica media
+        {%- elif a.cvss_score < 9 %}Gravedad técnica alta
+        {%- else %}Gravedad técnica crítica{% endif -%}
+      </strong></div>
+      <div class="pequeno suave">
+        Severidad {{ a.severity | severidad_es | lower }} · {{ a.severity_source | origen_es }}
+        {%- if a.cvss_version %} · CVSS {{ a.cvss_version }}{% endif %}
+        {%- if a.cvss_score is none %} · el sistema no inventa un número{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" data-tour="4" data-tour-titulo="EPSS" data-tour-texto="Probabilidad (0 a 100 %) de que la vulnerabilidad se explote en los próximos 30 días según FIRST. Un CVSS alto con EPSS bajo es grave pero poco probable.">
+    <div class="panel-cabecera">
+      <h2>Probabilidad de explotación</h2>
+      <span class="sub">¿Qué probabilidad <abbr title="Exploit Prediction Scoring System: probabilidad (0-100 %) de que la vulnerabilidad se explote en los próximos 30 días">EPSS</abbr> hay de que se explote en los próximos 30 días?</span>
+    </div>
+    <div class="panel-cuerpo centrado">
+      {{ graficos.medidor(epss_pct, 100, etiqueta="EPSS", decimales=1, sufijo="%",
+                          umbrales=[(10, "bajo"), (30, "medio"), (60, "alto"), (101, "critico")]) }}
+      <div class="mt-8"><strong>
+        {%- if epss_pct is none %}Sin estimación de explotación
+        {%- elif epss_pct < 10 %}Probabilidad de explotación baja
+        {%- elif epss_pct < 30 %}Probabilidad de explotación moderada
+        {%- elif epss_pct < 60 %}Probabilidad de explotación alta
+        {%- else %}Probabilidad de explotación muy alta{% endif -%}
+      </strong></div>
+      <div class="pequeno suave">
+        {% if epss_pct is none %}Sin dato EPSS: no hay CVE o todavía no se ha consultado
+        {% else %}Probabilidad de explotación en 30 días · fuente: <abbr title="Forum of Incident Response and Security Teams: organismo que publica las puntuaciones EPSS">FIRST</abbr> EPSS{% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" data-tour="5" data-tour-titulo="La prioridad para nosotros" data-tour-texto="De 0 a 100: combina la gravedad con lo que tenemos instalado y expuesto. Es el criterio que decide qué entra en la alerta diaria.">
+    <div class="panel-cabecera">
+      <h2>Relevancia para la organización</h2>
+      <span class="sub">¿Cuánto nos importa, de 0 a 100? Combina la severidad con la criticidad, exposición y versión de las tecnologías afectadas.</span>
+    </div>
+    <div class="panel-cuerpo centrado">
+      {{ graficos.medidor(relevancia, 100, etiqueta="Relevancia", decimales=0,
+                          umbrales=[(25, "bajo"), (50, "medio"), (75, "alto"), (101, "critico")]) }}
+      <div class="mt-8"><strong>
+        {%- if relevancia < 25 %}Prioridad baja para la organización
+        {%- elif relevancia < 50 %}Prioridad moderada para la organización
+        {%- elif relevancia < 75 %}Prioridad alta para la organización
+        {%- else %}Prioridad máxima para la organización{% endif -%}
+      </strong></div>
+      <div class="pequeno suave">
+        {# La relevancia solo tiene en cuenta las correlaciones con prueba suficiente
+           (confianza ≥ alert_min_match_confidence): la cifra que se enseña junto al
+           medidor tiene que ser esa y no el total de menciones (2026-09-15). #}
+        {% if tec_listadas or tec_descartadas %}{{ (tec_listadas + tec_descartadas) | numero }} tecnología{{ 's' if (tec_listadas + tec_descartadas) != 1 }} del inventario correlacionada{{ 's' if (tec_listadas + tec_descartadas) != 1 }} con prueba suficiente
+        {%- if tec_afectadas %} · {{ tec_afectadas | numero }} con versión afectada{% endif %}
+        {%- if tec_menciones %} · {{ tec_menciones | numero }} mención{{ 'es' if tec_menciones != 1 }} sin prueba, que no puntúa{{ 'n' if tec_menciones != 1 }}{% endif %}
+        {% elif tec_menciones %}Solo {{ tec_menciones | numero }} mención{{ 'es' if tec_menciones != 1 }} sin prueba de exposición: no puntúa{{ 'n' if tec_menciones != 1 }}, solo cuenta la gravedad técnica
+        {% else %}Sin correlación con el inventario: solo cuenta la gravedad técnica{% endif %}
+        · severidad según {{ a.severity_source | origen_es }}
+        {% if activos.evaluada %}· <a href="#activos-afectados">{% if activos.n_afectados %}<span class="txt-critico-b">{{ activos.n_afectados | numero }} activo{{ 's' if activos.n_afectados != 1 }} con la versión vulnerable</span>{% else %}ningún activo con la versión vulnerable{% endif %}</a>{% endif %}
+        · <a href="#como-se-calcula">cómo se calcula</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ================================================= 2b. cómo se calcula la prioridad #}
+<div class="panel" id="como-se-calcula" data-tour="6" data-tour-titulo="Desglose transparente" data-tour-texto="Cada componente con sus puntos: CVSS, explotación activa, EPSS, tecnologías del inventario, activos reales (con más peso en producción y contingencia), facilidad de explotación y parche disponible.">
+  <div class="panel-cabecera">
+    <h2>Cómo se calcula la prioridad</h2>
+    <span class="sub">Prioridad = gravedad técnica (CVSS) + explotación confirmada (KEV) + probabilidad (EPSS) + exposición (tecnologías del inventario y activos reales, con más peso en producción y contingencia) + facilidad de explotación + parche disponible. Tope 100.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead><tr><th>Componente</th><th class="num">Puntos</th><th>Detalle</th></tr></thead>
+        <tbody>
+        {% for d in desglose %}
+          <tr>
+            <td>{{ d.nombre }}</td>
+            <td class="num {% if d.puntos is string %}txt-exito-b{% elif d.puntos %}txt-b{% else %}tenue{% endif %}">{% if d.puntos is string %}{{ d.puntos }}{% else %}{{ graficos.fmt(d.puntos, 1) }}{% endif %}</td>
+            <td class="pequeno suave">{{ d.detalle }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot><tr><td>Prioridad para la organización</td><td class="num txt-b">{{ graficos.fmt(relevancia, 0) }}</td><td class="pequeno tenue">de 100; los componentes se suman y el ajuste por activos corregidos multiplica</td></tr></tfoot>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% if detalle_cve and detalle_cve.encontrado %}
+<div class="panel">
+  <div class="panel-cabecera">
+    <h2>Detalle del CVE según CVE.org</h2>
+    <span class="sub">Lo que declara la entidad que asignó el identificador (CNA): productos y versiones afectados, tipo de debilidad y referencias. Consultado {{ detalle_cve.consultado_at | hace }}.</span>
+  </div>
+  <div class="panel-cuerpo">
+    {% if detalle_cve.titulo %}<p><strong>{{ detalle_cve.titulo }}</strong>{% if detalle_cve.cna %} <span class="tenue">· asignado por {{ detalle_cve.cna }}</span>{% endif %}{% if detalle_cve.publicado %} <span class="tenue">· publicado el {{ detalle_cve.publicado | fecha_es }}</span>{% endif %}</p>{% endif %}
+    {% if detalle_cve.cwe %}<p class="pequeno"><strong>Tipo de debilidad:</strong> {{ detalle_cve.cwe | join('; ') }}</p>{% endif %}
+    {% if detalle_cve.afectados %}
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead><tr><th>Fabricante</th><th>Producto</th><th>Versiones</th></tr></thead>
+        <tbody>
+        {% for p in detalle_cve.afectados[:12] %}
+          {#
+            Solo rangos por VERSIÓN (2026-09-15): los rangos entre confirmaciones de git
+            («de 4a1b3c… hasta 9f0c12…») llenaban la columna y no dicen a nadie si le
+            afecta. Se cuentan al pie, para no ocultar que existen.
+          #}
+          <tr><td>{{ p.fabricante or '—' }}</td><td>{{ p.producto or '—' }}</td>
+            <td class="pequeno mono envolver">{% if p.versiones %}{{ p.versiones | join('; ') | recortar(200) }}
+              {%- else %}<span class="tenue">el aviso no da rangos por versión</span>{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if detalle_cve.afectados | length > 12 %}<p class="pequeno tenue mt-8">y {{ (detalle_cve.afectados | length - 12) | numero }} productos más.</p>{% endif %}
+    {% if detalle_cve.versiones_ocultas %}<p class="pequeno tenue mt-8">No se muestran
+      {{ detalle_cve.versiones_ocultas | numero }}
+      {{ 'rango' if detalle_cve.versiones_ocultas == 1 else 'rangos' }} expresados entre
+      confirmaciones del repositorio de código en lugar de entre versiones: solo sirven a
+      quien mantiene el código fuente y no permiten decidir si hay que actualizar.</p>{% endif %}
+    {% endif %}
+    {% if detalle_cve.descripcion and not a.summary_en %}<p class="pequeno mt-12">{{ detalle_cve.descripcion | recortar(600) }}</p>{% endif %}
+    {% if detalle_cve.referencias %}
+    <p class="pequeno mt-12"><strong>Referencias:</strong>
+      {% for r in detalle_cve.referencias[:5] %}<a href="{{ r | url_segura }}" rel="noopener noreferrer" target="_blank">{{ r | recortar(70) }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{# ============================================================== 3. hitos #}
+{% set hitos = [
+  {"titulo": "Primera vez vista", "valor": a.first_seen_at | fecha_es,
+   "nota": "periodo " ~ (a.month | mes_es), "estado": "ok"},
+  {"titulo": "Última vez vista", "valor": a.last_seen_at | fecha_es,
+   "nota": ("citada " ~ (veces | numero) ~ " veces") if veces > 1 else "una sola aparición",
+   "estado": "ok"},
+  {"titulo": "Alertada", "valor": (a.alerted_at | fecha_es) if a.alerted_at else "pendiente",
+   "nota": "correo de alerta enviado" if a.alerted_at else "sin alerta enviada",
+   "estado": "ok" if a.alerted_at else "inactivo"},
+  {"titulo": "Explotación confirmada", "valor": "Sí" if a.in_kev else "No",
+   "nota": (("plazo CISA: " ~ (a.kev_due_date | fecha_es)) if a.kev_due_date else "catálogo CISA KEV") if a.in_kev else "no consta en CISA KEV",
+   "estado": "critico" if a.in_kev else "inactivo"},
+] %}
+<div class="panel">
+  <div class="panel-cabecera">
+    <h2>Hitos</h2>
+    <span class="sub">¿Cuándo apareció, cuándo se vio por última vez, se ha alertado ya por correo y consta explotación activa?</span>
+  </div>
+  <div class="panel-cuerpo">
+    {{ graficos.flujo(hitos, compacto=True,
+                      aria="Hitos de la amenaza: primera y última detección, alerta por correo y explotación confirmada") }}
+  </div>
+</div>
+
+<div class="rejilla dos-uno">
+  <div>
+    {# ------------------------------------------------- qué es: descripción #}
+    <div class="panel" data-tour="7" data-tour-titulo="Qué dice el aviso" data-tour-texto="Traducción automática del texto original; el original en inglés está debajo, plegado.">
+      <div class="panel-cabecera">
+        <h2>Descripción</h2>
+        <span class="sub">¿De qué trata el aviso?
+          {%- if a.summary_es and a.translation_engine and a.translation_engine != 'none' %} Traducción automática ({{ a.translation_engine }}) del texto original en inglés.
+          {%- elif a.summary_en and not a.summary_es %} Texto original en inglés: todavía sin traducir.{% endif %}</span>
+      </div>
+      <div class="panel-cuerpo">
+        {#
+          Traducción automática poco fiable (2026-09-15). Cuando el texto en español
+          contiene una de las vueltas mal dadas conocidas —«fijar el uso después de la
+          compra» por «use-after-free», «codificado duro» por «hardcoded»— la ficha lo
+          dice y abre el original en inglés, en lugar de presentar como buena una
+          descripción que no se entiende. La lista de términos está en
+          webui/vistas/amenazas.py (TERMINOS_SIN_TRADUCIR).
+        #}
+        {% if mal_traducidos and a.summary_en %}
+        <div class="aviso aviso-nivel" role="status">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.5v4.5M12 17h.01"/></svg>
+          <div><strong>La traducción automática no es fiable en este texto.</strong>
+            Ha traducido literalmente
+            {% for t in mal_traducidos %}<span class="mono">{{ t }}</span>{% if not loop.last %}, {% endif %}{% endfor %},
+            que {{ 'es un término técnico que' if mal_traducidos | length == 1 else 'son términos técnicos que' }}
+            debe{{ 'n' if mal_traducidos | length != 1 }} quedarse en inglés. Debajo está el
+            texto original, que es el que vale; la traducción queda plegada.</div>
+        </div>
+        <div class="bloque-texto">{{ texto_limpio(a.summary_en) }}</div>
+        {% if a.summary_es %}
+        <details class="mt-10">
+          <summary class="pequeno suave cursor-pointer">Ver la traducción automática al español (poco fiable en este texto)</summary>
+          <div class="bloque-texto mt-8">{{ texto_limpio(a.summary_es) }}</div>
+        </details>
+        {% endif %}
+        {% elif a.summary_es or a.summary_en %}
+          <div class="bloque-texto">{{ texto_limpio(a.summary_es or a.summary_en) }}</div>
+          {% if a.summary_es and a.summary_en and a.summary_es != a.summary_en %}
+          <details class="mt-10">
+            <summary class="pequeno suave cursor-pointer">Ver texto original en inglés</summary>
+            <div class="bloque-texto mt-8">{{ texto_limpio(a.summary_en) }}</div>
+          </details>
+          {% endif %}
+        {% else %}
+          <div class="vacio sin-icono">
+            <p>Sin resumen registrado.</p>
+            <p class="pequeno">La fuente solo aportó el título; consulte las referencias externas.</p>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ---------------------------------------------------- a qué nos afecta #}
+    <div class="panel" data-tour="8" data-tour-titulo="Correlación con el inventario" data-tour-texto="Qué tecnologías del inventario menciona el aviso, con qué confianza y si la versión registrada está afectada. Las menciones débiles no cuentan para la prioridad.">
+      <div class="panel-cabecera">
+        <h2>Tecnologías afectadas</h2>
+        <div class="panel-acciones">
+          <a class="btn pequeno" href="{{ url_for('tecnologias.lista') }}">Inventario</a>
+        </div>
+        <span class="sub">¿A qué tecnologías del inventario alcanza y confirma la versión instalada que nos afecta?
+          {% if tec_listadas %}Se {{ 'lista' if tec_listadas == 1 else 'listan' }} {{ tec_listadas | numero }} tecnología{{ 's' if tec_listadas != 1 }}
+            con prueba suficiente: {{ tec_afectadas | numero }} con versión afectada y
+            {{ tec_sin_determinar | numero }} sin determinar.
+          {% elif n_tec %}Ninguna tecnología con prueba suficiente que listar.
+          {% else %}Ninguna: el aviso no coincide con el inventario.{% endif %}
+          {%- if tec_descartadas %} Además, {{ tec_descartadas | numero }} descartada{{ 's' if tec_descartadas != 1 }} porque la versión registrada no es vulnerable (al pie).{% endif %}
+          {%- if tec_menciones %} Y {{ tec_menciones | numero }} mención{{ 'es' if tec_menciones != 1 }} sin prueba de exposición, que no {{ 'se lista' if tec_menciones == 1 else 'se listan' }} en la tabla y {{ 'tiene' if tec_menciones == 1 else 'tienen' }} su propia nota al final.{% endif %}</span>
+      </div>
+      <div class="panel-cuerpo sin-relleno">
+        {% if tecs_exposicion %}
+        <div class="tabla-envoltorio">
+          <table class="tabla-compacta">
+            <thead>
+              <tr>
+                <th>Tecnología</th>
+                <th title="Cuánto importa la tecnología para el negocio, según el inventario">Criticidad</th>
+                <th title="Desde dónde es alcanzable: Internet, DMZ o red interna">Exposición</th>
+                <th>Versión instalada</th>
+                <th title="Si la versión instalada es vulnerable según el aviso">Veredicto de versión</th>
+                <th class="num">Sistemas</th>
+                <th class="acciones"><span class="oculto-visual">Acciones</span></th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for t in tecs_exposicion %}
+              <tr>
+                <td>
+                  {{ t.name }}
+                  {% if t.matched_alias %}<div class="pequeno tenue">coincidencia: «{{ t.matched_alias }}»{% if t.confidence is not none %} · confianza {{ graficos.fmt(t.confidence, 2) }}{% endif %}</div>{% endif %}
+                </td>
+                <td class="nowrap"><span class="insignia {{ t.criticality }}">{{ criticidad_es.get(t.criticality, t.criticality) }}</span></td>
+                <td class="nowrap">
+                  {% if t.exposure == 'internet' %}
+                    <span class="insignia critical" title="Alcanzable desde Internet: exposición máxima">Internet</span>
+                  {% elif t.exposure == 'dmz' %}
+                    <span class="insignia medium" title="Zona desmilitarizada: expuesta a través del perímetro">DMZ</span>
+                  {% else %}
+                    <span class="insignia neutro">{{ exposicion_es.get(t.exposure, t.exposure or '—') }}</span>
+                  {% endif %}
+                </td>
+                <td class="mono">
+                  {% if t.version_installed %}{{ t.version_installed }}
+                  {% else %}<span class="tenue">sin registrar</span>{% endif %}
+                </td>
+                <td>
+                  {% if t.version_verdict == 'affected' %}
+                    <span class="chip afectada" title="La versión instalada es vulnerable según el aviso">Afectada</span>
+                  {% else %}
+                    <span class="chip" title="Falta la versión en el inventario o el aviso no la precisa">Sin determinar</span>
+                  {% endif %}
+                  {% if t.version_evidence %}<div class="pequeno tenue">{{ t.version_evidence }}</div>{% endif %}
+                </td>
+                <td class="num">{% if t.systems_count %}{{ t.systems_count | numero }}{% else %}—{% endif %}</td>
+                <td class="acciones">
+                  <a class="btn pequeno" href="{{ url_for('amenazas.lista', tec=t.slug) }}" title="Consultar todas las amenazas de esta tecnología">Sus amenazas</a>
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="panel-pie">
+          «Afectada»: la versión instalada es vulnerable según el aviso; «Sin determinar»: falta
+          la versión en el inventario o el aviso no la precisa, y por prudencia nunca se descarta
+          una amenaza por suposición.
+          {% if tec_descartadas %}Se comprobaron además
+          {{ tec_descartadas | numero }} tecnología{{ 's' if tec_descartadas != 1 }}
+          cuya versión instalada no es vulnerable según el aviso
+          ({{ tecs_descartadas | map(attribute='name') | join(', ') }}), y no se listan porque no
+          le afectan.{% endif %}
+        </div>
+        {#
+          Sin nada que listar pero con tecnologías descartadas por versión (2026-09-15): no es
+          «sin correlación con el inventario», es justo lo contrario, y decirlo así borraba la
+          prueba de que la comprobación se hizo.
+        #}
+        {% elif tec_descartadas %}
+        <div class="panel-pie">
+          <strong>Ninguna tecnología del inventario queda afectada.</strong>
+          Se {{ 'comprobó' if tec_descartadas == 1 else 'comprobaron' }} {{ tec_descartadas | numero }}
+          tecnología{{ 's' if tec_descartadas != 1 }} ({{ tecs_descartadas | map(attribute='name') | join(', ') }})
+          y la versión instalada no es vulnerable según el aviso, así que no {{ 'se lista' if tec_descartadas == 1 else 'se listan' }}:
+          es ruido que el inventario de versiones elimina.
+        </div>
+        {% elif not tecs_mencion %}
+        <div class="vacio">
+          <p>Sin correlación con el inventario.</p>
+          <p class="pequeno">Ninguna tecnología registrada coincide con este aviso; la relevancia se calcula solo con la gravedad técnica.</p>
+        </div>
+        {% endif %}
+        {% if tecs_mencion %}
+        <div class="panel-pie">
+          <strong>{{ tec_menciones | numero }} {{ 'mención sin prueba de exposición' if tec_menciones == 1 else 'menciones sin prueba de exposición' }}</strong> (confianza inferior a {{ graficos.fmt(min_confianza, 1) }}), que por eso no {{ 'aparece' if tec_menciones == 1 else 'aparecen' }} en la tabla de arriba:
+          {% for t in tecs_mencion %}{{ t.name }} («{{ t.matched_alias }}»){% if not loop.last %}, {% endif %}{% endfor %}.
+          El texto las nombra de pasada; no cuentan para la relevancia ni para la alerta.
+          {% if not tecs_exposicion %}Ninguna tecnología del inventario queda afectada con prueba suficiente.{% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ------------------------------- desglose por sistema operativo (2026-09-06) #}
+    {# Revision del 2026-09-06 (hallazgo 3): el plan va POR PAQUETE. Un sistema con varios
+       paquetes no tiene una sola pareja «de X a Y» (en FreeBSD conviven el sistema base
+       14.4_5 y puertos como openssl 3.0.16,1), asi que se pinta una fila por paquete. #}
+    {% if activos.sistemas %}
+    <div class="panel" id="por-sistema" data-tour="9" data-tour-titulo="Qué hacer en cada sistema operativo" data-tour-texto="La versión que corrige el fallo no es la misma en todos los sistemas y en algunos todavía no existe: aquí está, sistema por sistema y paquete por paquete, de qué versión hay que pasar a cuál, cuántos activos hay en producción o contingencia y la fuente oficial del fabricante que lo sustenta.">
+      <div class="panel-cabecera">
+        <h2>Qué hay que hacer en cada sistema operativo</h2>
+        <span class="sub">Un mismo fallo se corrige con una versión distinta en cada sistema y en cada paquete, y en algunos el fabricante todavía no la ha publicado. Hay una fila por paquete afectado, y cada una lleva el enlace a la fuente oficial con la que verificarla.</span>
+      </div>
+      <div class="panel-cuerpo sin-relleno">
+        {#
+          Visible de inmediato (2026-11-16, petición del usuario): antes plegada en un
+          <details>, que no todo el mundo nota que se puede abrir.
+        #}
+        <div class="tabla-envoltorio mt-8">
+          <table class="tabla-compacta" id="tabla-por-sistema" data-paginar-grupos data-grupos-por-pagina="10" data-unidad-grupo="paquete" data-unidad-grupo-plural="paquetes">
+            <thead>
+              <tr><th class="minw-150">Sistema operativo</th><th class="num">Activos</th><th class="num">En producción o contingencia</th><th>Paquete afectado</th><th class="minw-260">Qué hacer con ese paquete</th><th class="minw-150">Fuente oficial</th></tr>
+            </thead>
+            <tbody>
+            {% set ns = namespace(fila=-1) %}
+            {% for s in activos.sistemas %}
+              {% for d in s.paquetes_detalle %}
+              {% set ns.fila = ns.fila + 1 %}
+              <tr data-grupo="{{ ns.fila }}">
+                <td class="txt-b">{{ s.nombre }}
+                  {% if s.n_paquetes > 1 %}<div class="pequeno tenue">{{ s.n_paquetes | numero }} paquetes afectados, cada uno con su propia versión</div>{% endif %}</td>
+                <td class="num">{{ s.n_activos | numero }}</td>
+                <td class="num">{% if s.n_expuestos %}<span class="txt-critico-b">{{ s.n_expuestos | numero }}</span>{% else %}<span class="tenue">0</span>{% endif %}</td>
+                <td class="pequeno"><span class="mono envolver">{{ d.paquete | recortar(40) }}</span></td>
+                <td class="pequeno">
+                  {% if d.varias_corregidas %}
+                  <span class="txt-exito-b">Actualizar a la versión que indica el aviso de cada equipo</span>
+                  <ul class="lista-lineas">
+                    {% for p in d.parejas[:4] %}<li>de <span class="mono">{{ p.instalada or 'la versión instalada' }}</span> a <span class="mono">{{ p.corregida }}</span>, en {{ p.n_filas | numero }} equipo{{ 's' if p.n_filas != 1 }}</li>{% endfor %}
+                    {% if d.parejas | length > 4 %}<li>y otras {{ (d.parejas | length - 4) | numero }} parejas de versiones</li>{% endif %}
+                  </ul>
+                  {% elif d.hay_correccion %}
+                  <span class="txt-exito-b">Actualizar de <span class="mono">{{ d.version_instalada or 'la versión instalada' }}</span> a <span class="mono">{{ d.version_corregida }}</span></span>
+                  {% if d.comparacion and d.comparacion.texto and not d.comparacion.identicas %}<div class="pequeno tenue envolver">{{ d.comparacion.texto }}</div>{% endif %}
+                  {#
+                    La orden de comprobación no es «qué hacer con el paquete»: es cómo
+                    comprobarlo en la máquina (2026-09-15). Va en su propio desplegable
+                    para que la columna diga solo la acción.
+                  #}
+                  {% if d.comparacion and d.comparacion.verificacion %}
+                  <details class="detalle-ayuda mt-8">
+                    <summary>Cómo verificarlo en la máquina</summary>
+                    <div class="pequeno tenue mono envolver mt-8">{{ d.comparacion.verificacion }}</div>
+                  </details>
+                  {% endif %}
+                  {% else %}
+                  <span class="txt-medio">Sin corrección publicada todavía</span>
+                  {% if d.sin_parche_motivo_es %}<div class="pequeno tenue envolver">{{ d.sin_parche_motivo_es | capitalize }}</div>{% endif %}
+                  {% if d.version_instalada %}<div class="pequeno tenue envolver">Versión instalada más antigua de este paquete: <span class="mono">{{ d.version_instalada }}</span></div>{% endif %}
+                  {% endif %}
+                </td>
+                <td class="pequeno">
+                  {% for av in d.avisos %}
+                    {% if av.url %}<a class="mono" href="{{ av.url | url_segura }}" rel="noopener noreferrer" target="_blank">{{ av.id | recortar(28) }}</a>{% else %}<span class="mono">{{ av.id | recortar(28) }}</span>{% endif %}{% if not loop.last %}, {% endif %}
+                  {% endfor %}
+                  {% if d.referencia and d.referencia_es %}<div><a href="{{ d.referencia | url_segura }}" rel="noopener noreferrer" target="_blank">{{ d.referencia_es }}</a></div>{% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if activos.sistemas | sum(attribute='n_paquetes') > 10 %}
+        <div class="modal-paginacion" id="paginacion-por-sistema" data-paginar-de="tabla-por-sistema">
+          <button class="btn pequeno" type="button" data-pag-anterior disabled>← Anterior</button>
+          <span data-pag-info></span>
+          <button class="btn pequeno" type="button" data-pag-siguiente>Siguiente →</button>
+        </div>
+        {% endif %}
+        <div class="panel-pie">Cada fila es un paquete de ese sistema con su propia versión instalada y su propia versión corregida: no se mezclan paquetes distintos en una sola frase. El detalle máquina por máquina está justo debajo.</div>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ------------------------------------------------ activos afectados (OCS) #}
+    {% if hay_activos or activos.evaluada %}
+    <div class="panel" id="activos-afectados" data-tour="10" data-tour-titulo="Los activos concretos" data-tour-texto="Comparación del paquete instalado en cada activo (según OCS Inventory) con la versión que corrige el fallo. El botón «Plan de remediación» agrupa los activos por sistema y da la orden que los corrige.">
+      <div class="panel-cabecera">
+        <h2>Activos afectados</h2>
+        <div class="panel-acciones">
+          {% if activos.n_afectados %}<a class="btn pequeno primario" href="{{ url_for('amenazas.remediacion', threat_id=a.id) }}">Plan de remediación</a>{% endif %}
+          {% if a.cve %}
+          {#
+            Cierra el ciclo con la página de Activos (2026-11-15, petición del usuario):
+            desde aquí se ve el CVE de esta amenaza; el enlace lleva a la lista de
+            Activos ya filtrada por ese identificador exacto, con la misma tabla
+            paginada, exportable y con el resto de filtros disponibles. La tabla de
+            abajo solo trae hasta 60 activos; este enlace sí trae todos.
+          #}
+          <a class="btn pequeno" href="{{ url_for('activos.lista', cve=a.cve) }}">Ver todos los activos afectados</a>
+          {% else %}
+          <a class="btn pequeno" href="{{ url_for('activos.lista', vista='afectados') }}">Ver activos</a>
+          {% endif %}
+        </div>
+        <span class="sub">¿Qué activos tienen de verdad la versión vulnerable? Una fila por paquete instalado (según OCS Inventory) con su versión y con la versión que corrige el fallo.
+          {% if activos.evaluada %}Evaluado {{ activos.evaluado_at | hace }}: {{ activos.n_afectados | numero }} afectado{{ 's' if activos.n_afectados != 1 }},
+            {{ activos.n_no_afectados | numero }} ya corregido{{ 's' if activos.n_no_afectados != 1 }} y {{ activos.n_sin_dato | numero }} sin dato.
+          {% else %}Todavía no evaluada: se hace en la ejecución diaria para las amenazas con CVE.{% endif %}</span>
+      </div>
+      {#
+        Riesgo aceptado (excepciones con vencimiento, 2026-09-10). Si hay alguna excepción
+        vigente sobre este CVE se dice aquí, con quién acepta el riesgo y hasta cuándo:
+        esas vulnerabilidades no cuentan en las cifras de Amenazas ni en el Panel, no están
+        en la cola de remediación y no disparan la alerta diaria, pero los activos siguen
+        en la tabla porque su versión sigue siendo vulnerable. Ámbar, nunca verde.
+      #}
+      {% if excepciones_cve %}
+      <div class="panel-cuerpo">
+        <div class="aviso aviso-nivel" role="status">
+          <div>
+            <strong>{{ excepciones_cve | length | numero }} {{ 'excepción vigente' if excepciones_cve | length == 1 else 'excepciones vigentes' }} sobre esta vulnerabilidad: riesgo aceptado.</strong>
+            Mientras la aceptación esté vigente, lo que cubre no cuenta en las cifras de riesgo, no está en la cola de remediación y no dispara la alerta diaria; el activo sigue teniendo la versión vulnerable y por eso sigue en esta tabla. Al vencer o revocarse, vuelve solo.
+            <ul class="lista-lineas">
+            {% for e in excepciones_cve %}
+              <li><span class="insignia medio">Riesgo aceptado{{ ' (permanente)' if e.permanente }}</span>
+                {% if e.kev %}<span class="insignia kev" title="Explotación activa confirmada por CISA cuando se aceptó el riesgo">KEV</span>{% endif %}
+                {{ e.descripcion }} · {% if e.permanente %}permanente, sin fecha de vencimiento{% else %}hasta el {{ e.vence_at | fecha_es }}
+                ({{ e.dias_restantes | numero }} día{{ 's' if e.dias_restantes != 1 }}){% endif %}
+                · lo acepta {{ e.responsable_nombre }} ({{ e.responsable_correo }})
+                · <a href="{{ url_for('excepciones.lista', q=e.cve or a.cve) }}">ver la excepción</a></li>
+            {% endfor %}
+            </ul>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+      <div class="panel-cuerpo sin-relleno">
+        {% if activos.afectados %}
+        {#
+          Cuadro de tarjetas, visible de inmediato (2026-11-16, petición del usuario:
+          «no todos ven la opción de desplegar lista de manera rápida»). Sustituye al
+          <details> plegado y a la tabla de hasta 60 activos: usa el mismo endpoint
+          paginado que el cuadro de la lista de Amenazas, así que trae TODOS los
+          activos (no solo 60) y permite exportar a Excel y comprobar cada
+          remediación sin salir de la ficha.
+        #}
+        <div class="modal-filtros sin-borde" id="grid-activos-amenaza" data-threat-id="{{ a.id }}">
+          <input type="search" id="grid-buscar-activos" class="campo-buscar-modal" placeholder="Buscar por nombre, IP o paquete…" autocomplete="off">
+          <span id="grid-contador-activos" class="pequeno tenue"></span>
+          <a id="grid-exportar-activos" class="btn primario pequeno" href="{{ url_for('amenazas.activos_afectados_excel', threat_id=a.id) }}" download>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 3v12m0 0-4-4m4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+            Descargar Excel
+          </a>
+        </div>
+        <div class="panel-cuerpo" id="grid-cuerpo-activos" data-threat-id="{{ a.id }}">
+          <p class="cargando">Cargando activos afectados…</p>
+        </div>
+        <div class="modal-paginacion oculto" id="grid-paginacion-activos">
+          <button class="btn pequeno" id="grid-anterior" disabled>← Anterior</button>
+          <span id="grid-info-pagina"></span>
+          <button class="btn pequeno" id="grid-siguiente">Siguiente →</button>
+        </div>
+        {% elif activos.evaluada %}
+        <div class="vacio sin-icono"><p>Ningún activo tiene la versión vulnerable instalada.</p>
+          <p class="pequeno">{% if activos.n_no_afectados %}{{ activos.n_no_afectados | numero }} activo{{ 's' if activos.n_no_afectados != 1 }} ya {{ 'llevan' if activos.n_no_afectados != 1 else 'lleva' }} la corrección.{% endif %}
+             {% if activos.n_sin_dato %}{{ activos.n_sin_dato | numero }} sin dato suficiente.{% endif %}</p></div>
+        {% else %}
+        <div class="vacio sin-icono"><p>Pendiente de evaluar contra los activos.</p></div>
+        {% endif %}
+        {% if activos.lineas %}
+        <div class="panel-pie">
+          <strong>Cómo se evaluó:</strong>
+          <ul class="lista-lineas">{% for l in activos.lineas %}<li>{{ l }}</li>{% endfor %}
+          {% for e in activos.errores or [] %}<li class="txt-medio">Sin respuesta: {{ e }}</li>{% endfor %}</ul>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+    {# ----------------------------------------------------------- qué hacer #}
+    {% if a.impact_es %}
+    <div class="panel">
+      <div class="panel-cabecera">
+        <h2>Impacto</h2>
+        <span class="sub">¿Qué consecuencias tendría para la organización si se explotara?</span>
+      </div>
+      <div class="panel-cuerpo"><div class="bloque-texto">{{ a.impact_es }}</div></div>
+    </div>
+    {% endif %}
+
+    {% if a.remediation_es %}
+    <div class="panel">
+      <div class="panel-cabecera">
+        <h2>Remediación recomendada</h2>
+        <span class="sub">¿Qué hay que hacer para corregirla o mitigarla?</span>
+      </div>
+      <div class="panel-cuerpo"><div class="bloque-texto">{{ a.remediation_es }}</div></div>
+    </div>
+    {% endif %}
+
+    {% if not a.impact_es and not a.remediation_es %}
+    <div class="panel">
+      <div class="panel-cabecera">
+        <h2>Impacto y remediación</h2>
+        <span class="sub">¿Qué consecuencias tendría y qué hay que hacer?</span>
+      </div>
+      <div class="panel-cuerpo">
+        <div class="vacio sin-icono">
+          <p>Sin análisis de impacto ni remediación registrado.</p>
+          <p class="pequeno">Se genera al enriquecer la amenaza; mientras tanto, consulte las referencias externas.</p>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <div>
+    {# ------------------------------------------------------------- fuentes #}
+    <div class="panel" data-tour="11" data-tour-titulo="De dónde viene" data-tour-texto="Las fuentes que informaron este aviso, con enlace al original.">
+      <div class="panel-cabecera">
+        <h2>Fuentes</h2>
+        <span class="sub">
+          {%- if a.sources %}{{ a.sources | length | numero }} referencia{{ 's' if a.sources | length != 1 }} externa{{ 's' if a.sources | length != 1 }}; se abren en una pestaña nueva.
+          {%- else %}Ninguna referencia registrada.{% endif -%}
+        </span>
+      </div>
+      <div class="panel-cuerpo">
+        {% if a.sources %}
+          <ul class="m0-pl18">
+          {% for s in a.sources %}
+            {% set enlace = s.url | url_segura %}
+            <li class="mb-6">
+              <strong class="pequeno">{{ s.name }}</strong><br>
+              {% if enlace %}
+                <a class="pequeno mono" href="{{ enlace }}" target="_blank" rel="noopener noreferrer">{{ s.url | recortar(58) }}</a>
+              {% else %}
+                <span class="pequeno tenue" title="La URL no usa un esquema admitido (http, https o mailto) y no se enlaza">enlace omitido por seguridad</span>
+              {% endif %}
+            </li>
+          {% endfor %}
+          </ul>
+        {% else %}
+          <div class="vacio sin-icono"><p>Sin referencias registradas.</p></div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# ------------------------------------------------------ datos técnicos #}
+    <div class="panel">
+      <div class="panel-cabecera">
+        <h2>Datos técnicos</h2>
+        <span class="sub">Identificadores, fechas exactas y vector CVSS para el análisis.</span>
+      </div>
+      <div class="panel-cuerpo">
+        <dl class="detalle-lista">
+          {#
+            Huella interna (2026-09-15): no es un identificador público ni sirve para
+            buscar en ninguna parte; solo lo usa el soporte de la plataforma para
+            localizar la fila. Se dice qué es, en lugar de llamarlo «Identificador» y
+            dejar a quien lee pensando que le falta algo.
+          #}
+          <dt>Huella interna de la plataforma</dt>
+          <dd class="mono envolver">{{ a.fingerprint | recortar(20) }}
+            <div class="pequeno tenue">Solo para soporte técnico: no es un identificador
+              público. El identificador público es el CVE.</div></dd>
+          <dt>Publicada</dt><dd>{% if a.published_at %}{{ a.published_at | fecha_es }}{% else %}<span class="tenue">sin fecha de publicación</span>{% endif %}</dd>
+          <dt>Primera detección</dt><dd>{{ a.first_seen_at | fecha_es(con_hora=True) }}</dd>
+          <dt>Última detección</dt><dd>{{ a.last_seen_at | fecha_es(con_hora=True) }}</dd>
+          <dt>Veces vista</dt><dd>{{ veces | numero }}</dd>
+          <dt>Periodo</dt><dd>{{ a.month | mes_es }}</dd>
+          {% if a.cvss_vector %}
+          <dt>Vector CVSS</dt><dd class="mono">{{ a.cvss_vector }}</dd>
+          {% endif %}
+          {% if a.cvss_version %}
+          <dt>Versión CVSS</dt><dd>{{ a.cvss_version }}</dd>
+          {% endif %}
+          <dt>Enriquecida</dt>
+          <dd>{% if a.enriched_at %}{{ a.enriched_at | fecha_es(con_hora=True) }}
+              {% else %}<span class="tenue">no enriquecida contra NVD</span>{% endif %}</dd>
+          <dt>Alertada</dt>
+          <dd>{% if a.alerted_at %}{{ a.alerted_at | fecha_es(con_hora=True) }}
+              {% else %}<span class="tenue">no se ha alertado</span>{% endif %}</dd>
+          <dt>Traducción</dt>
+          <dd>{% if a.translation_engine and a.translation_engine != 'none' %}automática ({{ a.translation_engine }})
+              {% else %}<span class="tenue">sin traducir</span>{% endif %}</dd>
+        </dl>
+      </div>
+    </div>
+
+    {# --------------------------------------------- mismo CVE, otros periodos #}
+    {% if otras %}
+    <div class="panel">
+      <div class="panel-cabecera">
+        <h2>Mismo CVE en otros periodos</h2>
+        <span class="sub">¿Reaparece mes tras mes? Un CVE que vuelve suele indicar deuda de parcheo.</span>
+      </div>
+      <div class="panel-cuerpo sin-relleno">
+        <div class="tabla-envoltorio">
+          <table class="tabla-compacta">
+            <thead>
+              <tr><th>Periodo</th><th>Severidad</th><th class="num">Veces vista</th></tr>
+            </thead>
+            <tbody>
+            {% for o in otras %}
+              <tr>
+                <td><a href="{{ url_for('amenazas.detalle', threat_id=o.id) }}">{{ o.month | mes_es }}</a></td>
+                <td class="nowrap">
+                  <span class="insignia {{ o.severity | lower }}">{{ o.severity | severidad_es }}</span>
+                  {% if o.in_kev %}<span class="insignia kev" title="Explotación activa confirmada por CISA">KEV</span>{% endif %}
+                </td>
+                <td class="num">{{ (o.times_seen or 1) | numero }}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+</div>{# fin de la zona viva #}
+{% endblock %}

@@ -1,0 +1,49 @@
+{# Parcial de la ficha de activo: nivel de parche de Windows (motor MSRC, esquema v6). Recibe
+   ``windows`` de threatintel.msrc.resumen_activo; si el activo no es Windows no pinta nada. #}
+{% if windows and windows.aplica %}
+<div class="panel" id="windows-parches" data-tour="6" data-tour-titulo="Actualizaciones de Windows" data-tour-texto="Con las actualizaciones acumulativas (KB) que OCS ve instaladas y los boletines mensuales de Microsoft se deduce qué compilación tiene el activo, cuántos meses de parches le faltan y qué CVE de Windows le afectan de verdad.">
+  <div class="panel-cabecera">
+    <h2>Actualizaciones de Windows</h2>
+    <span class="sub">Nivel de parche según los boletines de seguridad de Microsoft (MSRC){% if windows.producto %} para {{ windows.producto }}{% endif %}.</span>
+  </div>
+  <div class="panel-cuerpo">
+    <div class="rejilla c4">
+      <div class="metrica {% if windows.build %}{% if windows.al_dia %}exito{% else %}critico{% endif %}{% else %}neutro{% endif %}">
+        <div class="valor fs-22-b mono">{{ windows.build or 'sin dato' }}</div>
+        <div class="etiqueta">Compilación instalada</div>
+        <div class="nota">{% if windows.build %}deducida de la KB acumulativa más reciente{% else %}ninguna KB de los boletines reconocida{% endif %}</div>
+      </div>
+      <div class="metrica {% if windows.kb %}neutro{% else %}medio{% endif %}">
+        <div class="valor fs-22-b mono">{{ windows.kb or 'sin dato' }}</div>
+        <div class="etiqueta">Actualización instalada</div>
+        <div class="nota">{% if windows.kb_publicado %}publicada el {{ windows.kb_publicado | fecha_es }}{% elif windows.kbs_instaladas %}{{ windows.kbs_instaladas | numero }} KB en el inventario, ninguna de Windows{% else %}OCS no informa de ninguna KB{% endif %}</div>
+      </div>
+      <div class="metrica neutro">
+        <div class="valor fs-22-b mono">{{ windows.ultima_kb or 'sin dato' }}</div>
+        <div class="etiqueta">Última publicada por Microsoft</div>
+        <div class="nota">{% if windows.ultima_publicado %}{{ windows.ultima_publicado | fecha_es }}{% if windows.ultima_build %} · compilación {{ windows.ultima_build }}{% endif %}{% else %}sin boletín para esta versión{% endif %}</div>
+      </div>
+      <div class="metrica {% if windows.meses_atraso is none %}neutro{% elif windows.meses_atraso >= 2 %}critico{% elif windows.meses_atraso == 1 %}medio{% else %}exito{% endif %}">
+        <div class="valor fs-22-b">
+          {% if windows.meses_atraso is none %}<span class="insignia neutra">Sin dato</span>
+          {% elif windows.al_dia %}<span class="insignia ok">Al día</span>
+          {% elif windows.meses_atraso >= 2 %}<span class="insignia critical">{{ windows.meses_atraso | numero }} meses</span>
+          {% elif windows.meses_atraso == 1 %}<span class="insignia medium">1 mes</span>
+          {% else %}<span class="insignia medium">Este mes</span>{% endif %}
+        </div>
+        <div class="etiqueta">Atraso de parches</div>
+        <div class="nota">{% if windows.meses_atraso is none %}no se puede medir{% elif windows.al_dia %}lleva la última acumulativa{% else %}meses desde la KB instalada hasta la última publicada{% endif %}</div>
+      </div>
+    </div>
+    <p class="mt-12">{{ windows.explicacion }}</p>
+    {% if windows.n_afectados or windows.n_corregidos or windows.n_sin_dato %}
+    <p class="pequeno suave">CVE de Windows evaluados con este motor:
+      <span class="insignia {% if windows.n_afectados %}critical{% else %}neutra{% endif %}">{{ windows.n_afectados | numero }} sin corregir</span>
+      <span class="insignia {% if windows.n_corregidos %}ok{% else %}neutra{% endif %}">{{ windows.n_corregidos | numero }} ya corregidos</span>
+      {% if windows.n_sin_dato %}<span class="insignia neutra">{{ windows.n_sin_dato | numero }} sin dato</span>{% endif %}
+      Aparecen en la tabla de amenazas evaluadas con el motor «Boletín de seguridad de Microsoft (MSRC)».</p>
+    {% endif %}
+    <p class="pequeno tenue">Cómo se calcula: cada boletín mensual de Microsoft dice qué actualización acumulativa (KB) y qué compilación corrigen cada CVE en cada versión de Windows. De las KB que OCS ve instaladas en el activo se toma la más reciente y su compilación; un CVE se da por corregido si esa compilación es igual o superior a la que lo arregla, y por pendiente si es inferior. Sin ninguna KB reconocida no se puede afirmar nada.</p>
+  </div>
+</div>
+{% endif %}

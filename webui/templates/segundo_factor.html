@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex, nofollow">
+<title>Segundo factor · Inteligencia de Amenazas</title>
+<script src="{{ url_for('static', filename='tema.js') }}"></script>
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='estilo.css') }}">
+</head>
+<body>
+{#
+  Segundo paso del acceso: la contraseña ya es correcta y la sesión está pendiente del
+  código. Misma estructura visual que login.html. Sin style= ni on*= (CSP estricta).
+  El campo admite pegar (WCAG 2.2, autenticación accesible) y sirve tanto para el código
+  de seis dígitos de la aplicación como para un código de recuperación.
+#}
+<div class="login-marco">
+  <div class="login-caja">
+    <div class="login-cabecera">
+      <div class="marca">
+        <svg class="marca-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <path d="M12 2.5 4 5.5v6c0 4.6 3.4 8.6 8 9.9 4.6-1.3 8-5.3 8-9.9v-6z"/>
+          <path d="M8.8 12.2l2.2 2.2 4.4-4.6"/>
+        </svg>
+        <div class="marca-texto">
+          <h1>Inteligencia de Amenazas</h1>
+          <p>{{ empresa }}</p>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-cabecera"><h2>Segundo factor de autenticación</h2></div>
+      <div class="panel-cuerpo">
+        {% with mensajes = get_flashed_messages(with_categories=true) %}
+          {% for categoria, mensaje in mensajes %}
+            <div class="aviso {% if categoria == 'aviso' %}aviso-nivel{% else %}{{ categoria }}{% endif %}" role="status">{{ mensaje }}</div>
+          {% endfor %}
+        {% endwith %}
+
+        <p class="suave">Abra la aplicación de códigos de su teléfono y escriba el código de seis dígitos
+           que muestra para esta plataforma. Si no tiene el teléfono, use uno de sus códigos de
+           recuperación (cada uno sirve una sola vez).</p>
+
+        <form method="post" action="{{ url_for('auth.segundo_factor') }}" autocomplete="off">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <div class="campo">
+            <label for="codigo">Código de la aplicación o código de recuperación</label>
+            <input type="text" id="codigo" name="codigo" required autofocus
+                   autocomplete="one-time-code" autocapitalize="none"
+                   spellcheck="false" maxlength="40" class="mono">
+            <div class="ayuda">Seis dígitos de la aplicación, o un código de recuperación con el formato xxxxx-xxxxx.</div>
+          </div>
+          <button class="btn primario w-full-center" type="submit">Verificar</button>
+        </form>
+
+        <form method="post" action="{{ url_for('auth.logout') }}" class="mt-12">
+          <input type="hidden" name="csrf" value="{{ csrf }}">
+          <button class="btn w-full-center" type="submit">Cancelar y volver al acceso</button>
+        </form>
+      </div>
+      <div class="panel-pie centrado pequeno">
+        Los intentos fallidos se registran y bloquean la cuenta temporalmente.
+      </div>
+    </div>
+    <p class="login-pie">Inteligencia de Amenazas · {{ empresa }} · Uso interno</p>
+  </div>
+</div>
+</body>
+</html>

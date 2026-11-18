@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block titulo %}Alertas por proceso{% endblock %}
+{% block contenido %}
+{# Zona viva (2026-09-10): esta pantalla se actualiza sin recargar. Las acciones
+   marcadas con `data-accion-viva` y los enlaces de esta misma dirección piden la
+   página al servidor y sustituyen solo este trozo, así que no se pierde el sitio
+   ni la posición de desplazamiento. Sin JavaScript todo funciona igual que antes,
+   con recarga. Contrato en docs/INTERACCION_SIN_RECARGA_2026-09-10.md. #}
+<div id="pagina-alertas-proceso" data-zona-viva data-zona-nombre="Alertas por proceso de negocio" tabindex="-1">
+{#
+  Alertas por proceso de negocio (solo administradores): destino, activación y ámbito de
+  cada proceso, historial de envíos y correo de prueba. Sin style= ni on*= (CSP estricta).
+#}
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Alertas por proceso de negocio" data-tour-texto="Cada servidor pertenece a un proceso de negocio (campo TAG de OCS). Aquí se decide qué procesos reciben su propio correo de alerta, a qué dirección y si se activa o no. El correo general al equipo de seguridad se envía siempre.">
+  <div>
+    <h1>Alertas por proceso</h1>
+    <p>Correo propio para cada proceso de negocio con <strong>solo sus servidores afectados</strong>.
+       Se envía justo después del correo general y únicamente si hay amenazas nuevas cuya versión vulnerable
+       está instalada, según OCS Inventory, en algún servidor del proceso.</p>
+  </div>
+  <div class="acciones-titulo">
+    <a class="btn" href="{{ url_for('ajustes.panel') }}">Ajustes de alertas</a>
+  </div>
+</div>
+
+{% if not habilitado %}
+<div class="aviso aviso-nivel">
+  <div>
+    <strong>Las alertas por proceso están desactivadas.</strong>
+    El interruptor general «Enviar alertas por proceso de negocio» está apagado en
+    <a href="{{ url_for('ajustes.panel') }}">Ajustes → Alertas diarias</a>; no se enviará ningún correo por proceso
+    aunque aquí figuren activos. La configuración de esta página se conserva.
+  </div>
+</div>
+{% endif %}
+
+<div class="rejilla c4 mb-18">
+  <div class="panel metrica neutro">
+    <div class="valor">{{ n_procesos | numero }}</div>
+    <div class="etiqueta">Procesos de negocio</div>
+    <div class="nota">con servidores presentes en OCS</div>
+  </div>
+  <div class="panel metrica {% if n_activas %}exito{% else %}neutro{% endif %}">
+    <div class="valor">{{ n_activas | numero }}</div>
+    <div class="etiqueta">Con alerta activa</div>
+    <div class="nota">{{ n_con_correo | numero }} con correo de destino guardado</div>
+  </div>
+  {#
+    Alcance escrito en la propia cifra (auditoría de tableros del 2026-09-15). Estas dos
+    tarjetas suman los procesos, así que solo hablan de los servidores CON proceso
+    asignado en OCS Inventory. Decían «356 servidores» y «334 con vulnerabilidades»
+    mientras el parque tiene 391 servidores presentes y 357 afectados: quien leía esta
+    página creía estar viendo el parque entero y no cuadraba con el Panel ni con Activos.
+    Ahora el rótulo dice sobre qué se cuenta y la nota da el total del parque.
+  #}
+  <div class="panel metrica neutro">
+    <div class="valor">{{ n_servidores | numero }}</div>
+    <div class="etiqueta">Servidores con proceso asignado</div>
+    <div class="nota">de los {{ parque.total | numero }} servidores presentes en OCS Inventory{% if n_sin_proceso %}; {{ n_sin_proceso | numero }} sin proceso asignado {{ 'no recibe' if n_sin_proceso == 1 else 'no reciben' }} ningún correo por proceso{% endif %}</div>
+  </div>
+  <div class="panel metrica {% if n_vulnerables %}critico{% else %}exito{% endif %}">
+    <div class="valor">{{ n_vulnerables | numero }}</div>
+    <div class="etiqueta">Servidores con proceso y con vulnerabilidades</div>
+    <div class="nota">de los {{ n_servidores | numero }} servidores con proceso asignado, los que tienen la versión vulnerable confirmada. En todo el parque son {{ parque.con_vulnerabilidades | numero }} de {{ parque.total | numero }} servidores{% if parque.con_vulnerabilidades != n_vulnerables %}: la diferencia está en los servidores sin proceso, que esta página no cubre{% endif %}</div>
+  </div>
+</div>
+
+<div class="panel" data-tour="2" data-tour-titulo="Configuración por proceso" data-tour-texto="Para cada proceso: la dirección de destino (varias separadas por coma), el interruptor de activación y si se limita a producción y contingencia. Solo se envía si hay amenazas nuevas que afecten a servidores de ese proceso.">
+  <div class="panel-cabecera">
+    <h2>Destino y activación por proceso</h2>
+    <span class="sub">Escriba el correo, marque «Activa» y pulse «Guardar». «Solo producción y contingencia» deja fuera los servidores de desarrollo, pruebas y soporte.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    {% if procesos %}
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead>
+          <tr>
+            <th>Proceso</th>
+            <th class="num">Servidores</th>
+            <th class="num">Expuestos</th>
+            <th class="num">Con vulnerabilidades</th>
+            <th>Correo de destino</th>
+            <th>Activación</th>
+            <th>Último envío</th>
+            <th class="acciones"></th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for p in procesos %}
+          {% set fid = 'ap-' ~ loop.index %}
+          <tr>
+            <td>
+              <strong>{{ p.proceso }}</strong>
+              {% if p.activa %}<span class="insignia ok">Activa</span>{% else %}<span class="insignia neutra">Inactiva</span>{% endif %}
+              {% if not p.disponible %}<div class="pequeno tenue">Ya no tiene servidores en OCS Inventory; puede desactivarla.</div>{% endif %}
+            </td>
+            <td class="num">{{ p.servidores | numero }}</td>
+            <td class="num">{% if p.expuestos %}<span class="insignia high">{{ p.expuestos | numero }}</span>{% else %}{{ p.expuestos | numero }}{% endif %}</td>
+            <td class="num">{% if p.con_vulnerabilidades %}<span class="insignia critical">{{ p.con_vulnerabilidades | numero }}</span>{% else %}{{ p.con_vulnerabilidades | numero }}{% endif %}</td>
+            <td>
+              <form method="post" action="{{ url_for('alertas_proceso.guardar') }}" id="{{ fid }}"
+                    data-accion-viva="pagina-alertas-proceso" data-accion-espera="Guardando…">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <input type="hidden" name="proceso" value="{{ p.proceso }}">
+                <label for="{{ fid }}-correo" class="oculto-visual">Correo de destino del proceso {{ p.proceso }}</label>
+                <input type="email" id="{{ fid }}-correo" name="correo" value="{{ p.correo }}" multiple
+                       class="minw-220" placeholder="responsable@ejemplo.local" autocomplete="off" inputmode="email">
+              </form>
+              <div class="ayuda">Varios correos separados por coma.</div>
+            </td>
+            <td>
+              <div class="casilla">
+                <input type="checkbox" id="{{ fid }}-activa" name="activa" value="1" form="{{ fid }}"{% if p.activa %} checked{% endif %}>
+                <label for="{{ fid }}-activa">Activa</label>
+              </div>
+              <div class="casilla">
+                <input type="checkbox" id="{{ fid }}-expuestos" name="solo_expuestos" value="1" form="{{ fid }}"{% if p.solo_expuestos %} checked{% endif %}>
+                <label for="{{ fid }}-expuestos">Solo producción y contingencia</label>
+              </div>
+            </td>
+            <td class="pequeno nowrap">
+              {% if p.ultimo_envio_at %}
+                {{ p.ultimo_envio_at | fecha_es(con_hora=True) }}
+                <div class="tenue">{{ p.ultimo_envio_n | numero }} amenaza{{ 's' if p.ultimo_envio_n != 1 }} · {{ p.ultimo_envio_at | hace }}</div>
+              {% else %}
+                <span class="tenue">Nunca</span>
+              {% endif %}
+            </td>
+            <td class="acciones nowrap">
+              <button class="btn pequeno primario" type="submit" form="{{ fid }}">Guardar</button>
+              {% if p.correos %}
+              <form method="post" action="{{ url_for('alertas_proceso.probar') }}" class="inline"
+                    data-accion-viva="pagina-alertas-proceso" data-accion-espera="Comprobando…" data-accion-tiempo="120000">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <input type="hidden" name="proceso" value="{{ p.proceso }}">
+                <button class="btn pequeno" type="submit" title="Envía un correo corto de comprobación a {{ p.correos | join(', ') }}">Enviar prueba</button>
+              </form>
+              {% else %}
+              <button class="btn pequeno" type="button" disabled title="Guarde primero un correo de destino">Enviar prueba</button>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="vacio">
+      <p>No hay procesos de negocio en el inventario. Los procesos se toman del campo TAG de los servidores en OCS Inventory;
+         sincronice el inventario desde <a href="{{ url_for('activos.lista') }}">Activos</a> y vuelva a esta página.</p>
+    </div>
+    {% endif %}
+  </div>
+  <div class="panel-pie">
+    «Servidores» son los activos presentes del proceso; «Expuestos», los que están en producción o contingencia;
+    «Con vulnerabilidades», los que tienen instalada una versión vulnerable confirmada. El servidor de correo solo acepta
+    destinatarios del dominio de la empresa. Cada cambio queda en la <a href="{{ url_for('panel.auditoria') }}">auditoría</a>.
+  </div>
+</div>
+
+<div class="panel mt-12" data-tour="3" data-tour-titulo="Envíos recientes" data-tour-texto="Historial de los últimos correos enviados a cada proceso: cuándo, a qué dirección, cuántas amenazas y cuántos servidores incluía cada uno. Sirve para comprobar que el responsable del proceso está recibiendo sus alertas.">
+  <div class="panel-cabecera">
+    <h2>Envíos recientes</h2>
+    <span class="sub">{% if envios %}{% if envios | length == 1 %}El único correo por proceso enviado hasta ahora.{% else %}Últimos {{ envios | length | numero }} correos por proceso.{% endif %}{% else %}Todavía no se ha enviado ningún correo por proceso.{% endif %} Los correos de prueba no se registran aquí, solo en la auditoría.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    {% if envios %}
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead>
+          <tr><th>Fecha</th><th>Proceso</th><th>Destino</th><th class="num">Amenazas</th><th class="num">Servidores</th><th>Asunto</th></tr>
+        </thead>
+        <tbody>
+        {% for e in envios %}
+          <tr>
+            <td class="nowrap">{{ e.enviado_at | fecha_es(con_hora=True) }}<div class="pequeno tenue">{{ e.enviado_at | hace }}</div></td>
+            <td><strong>{{ e.proceso }}</strong></td>
+            <td class="pequeno">{{ e.correo }}</td>
+            <td class="num">{{ e.n_amenazas | numero }}</td>
+            <td class="num">{{ e.n_activos | numero }}</td>
+            <td class="pequeno tenue">{{ e.asunto | recortar(90) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="vacio"><p>Todavía no se ha enviado ningún correo por proceso. Se registrarán aquí cuando la ejecución diaria envíe alertas a un proceso activo.</p></div>
+    {% endif %}
+  </div>
+</div>
+</div>{# fin de la zona viva #}
+{% endblock %}

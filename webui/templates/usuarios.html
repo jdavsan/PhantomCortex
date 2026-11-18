@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% block titulo %}Usuarios{% endblock %}
+{% block contenido %}
+{# Zona viva (2026-09-10): esta pantalla se actualiza sin recargar. Las acciones
+   marcadas con `data-accion-viva` y los enlaces de esta misma dirección piden la
+   página al servidor y sustituyen solo este trozo, así que no se pierde el sitio
+   ni la posición de desplazamiento. Sin JavaScript todo funciona igual que antes,
+   con recarga. Contrato en docs/INTERACCION_SIN_RECARGA_2026-09-10.md. #}
+<div id="pagina-usuarios" data-zona-viva data-zona-nombre="Personas con acceso" tabindex="-1">
+{#
+  Gestión de usuarios (solo administradores): alta con el nombre de la persona y el correo
+  electrónico como nombre de usuario, edición completa (nombre, perfil, estado y contraseña
+  nueva) en un panel propio que se abre con ?editar=<id>, restablecimiento, desbloqueo y baja.
+  Petición del 2026-09-07: la identidad que se ve es el NOMBRE; el correo va debajo, en
+  pequeño y atenuado, y donde el nombre falta la fila lo dice y ofrece completarlo.
+  El cambio rápido de perfil y estado sigue en el selector de la fila (data-autosubmit en
+  app.js) con confirmación en la propia opción (data-confirmar); el botón «Guardar rol y
+  estado» solo aparece sin JavaScript (noscript). Las acciones destructivas llevan
+  data-confirm (mensaje) y data-confirm-si (texto del botón que confirma) hasta que app.js
+  pase de la ventana del navegador a la confirmación en la propia página: eso lo aplica el
+  coordinador en app.js y en estilo.css. Sin style= ni on*= (CSP estricta).
+#}
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Usuarios de la interfaz" data-tour-texto="Quién puede entrar y con qué permisos. Cada usuario tiene el nombre de la persona, que es lo que se muestra en toda la interfaz, y un correo electrónico que le sirve para entrar.">
+  <div>
+    <h1>Usuarios de la interfaz</h1>
+    <p>Quién puede entrar y con qué permisos. Cada usuario se identifica con el <strong>nombre de la
+       persona</strong> y entra con su <strong>correo electrónico</strong>; la contraseña debe tener al
+       menos 12 caracteres y combinar tres de: minúsculas, mayúsculas, dígitos y símbolos.
+       Todo usuario nuevo debe cambiarla en su primer acceso.</p>
+  </div>
+  <div class="acciones-titulo">
+    <button class="btn primario" type="button" data-toggle="form-usuario" aria-expanded="false">Crear usuario</button>
+  </div>
+</div>
+
+{# Contraseña generada (alta o restablecimiento): panel propio, visible UNA sola vez. Antes
+   iba dentro del aviso de arriba y el usuario no la veía (2026-09-08). La sesión la entrega
+   a esta carga y la borra; al recargar la página ya no está. #}
+{% if credencial %}
+<div class="panel credencial-una-vez mb-18" id="credencial-una-vez" role="region" aria-labelledby="credencial-titulo">
+  <div class="panel-cabecera">
+    <h2 id="credencial-titulo">{% if credencial.motivo == 'alta' %}Contraseña inicial de {{ credencial.nombre or credencial.usuario }}{% else %}Contraseña nueva de {{ credencial.usuario }}{% endif %}</h2>
+    <span class="sub"><strong>Se muestra una sola vez</strong>: al salir de esta página o recargarla desaparece y no
+      se puede recuperar (no queda guardada en ningún sitio). Cópiela ahora y comuníquesela a la persona por un
+      canal seguro; deberá cambiarla en su primer acceso.</span>
+  </div>
+  <div class="panel-cuerpo">
+    <div class="campo-fila credencial-fila">
+      <div class="campo flex2">
+        <label for="credencial-valor">Contraseña para <span class="mono">{{ credencial.usuario }}</span></label>
+        <input type="text" id="credencial-valor" class="mono credencial-valor" value="{{ credencial.password }}" readonly
+               autocomplete="off" spellcheck="false" aria-describedby="credencial-ayuda">
+        <div class="ayuda" id="credencial-ayuda">{{ credencial.password | length }} caracteres. Pulse «Copiar» o seleccione el texto.</div>
+      </div>
+      <div class="campo credencial-acciones">
+        <button type="button" class="btn primario" data-copiar="credencial-valor" data-copiado-texto="Copiada">Copiar</button>
+        <a class="btn" href="{{ url_for('usuarios.lista') }}">Ya la anoté, ocultar</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="rejilla c3 mb-18">
+  <div class="panel metrica"><div class="valor">{{ usuarios | length | numero }}</div><div class="etiqueta">Usuarios</div><div class="nota">{{ usuarios | selectattr('enabled') | list | length | numero }} habilitados{% if sin_nombre %} · {{ sin_nombre | numero }} sin nombre de persona{% endif %}</div></div>
+  <div class="panel metrica {% if admins == 1 %}medio{% else %}neutro{% endif %}"><div class="valor">{{ admins | numero }}</div><div class="etiqueta">Administradores habilitados</div><div class="nota">{% if admins == 1 %}solo uno: conviene tener un segundo{% else %}pueden gestionar usuarios y ajustes{% endif %}</div></div>
+  <div class="panel metrica neutro"><div class="valor">{{ usuarios | sum(attribute='sesiones') | numero }}</div><div class="etiqueta">Sesiones abiertas</div><div class="nota">en este momento</div></div>
+</div>
+
+{% if editar_no_existe %}
+<div class="aviso error" role="status">
+  <div><strong>El usuario que quería editar ya no existe.</strong> Puede que otro administrador lo haya eliminado.
+       Elija de nuevo en la lista de abajo.</div>
+</div>
+{% endif %}
+
+<div class="panel" id="form-usuario" hidden>
+  <div class="panel-cabecera"><h2>Nuevo usuario</h2><span class="sub">Escriba el nombre de la persona (es lo que se verá en la interfaz) y su correo, que será el nombre de usuario. Puede escribir la contraseña inicial o dejar que el sistema la genere; en ambos casos se pedirá cambiarla al entrar.</span></div>
+  <div class="panel-cuerpo">
+    <form method="post" action="{{ url_for('usuarios.crear') }}" autocomplete="off"
+          data-accion-viva="pagina-usuarios" data-accion-espera="Creando la cuenta…">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="campo-fila">
+        <div class="campo flex2">
+          <label for="nombre">Nombre y apellidos de la persona <span class="tenue">(obligatorio)</span></label>
+          <input type="text" id="nombre" name="nombre" required maxlength="80" autocomplete="off" spellcheck="false">
+          <div class="ayuda">{{ ayuda_nombre }} Es el nombre que verá en la barra superior y en las listas.</div>
+        </div>
+        <div class="campo flex2">
+          <label for="correo">Correo electrónico <span class="tenue">(obligatorio)</span></label>
+          <input type="email" id="correo" name="correo" required placeholder="nombre@ejemplo.local" autocomplete="off" inputmode="email">
+          <div class="ayuda">Será su nombre de usuario para entrar.</div>
+        </div>
+        <div class="campo">
+          <label for="rol">Perfil</label>
+          <select id="rol" name="rol">
+            {% for r in roles %}<option value="{{ r }}"{% if r == 'viewer' %} selected{% endif %}>{{ rol_es[r] }}</option>{% endfor %}
+          </select>
+          {# El alcance de cada perfil sale de webui.auth, que es donde lo aplica el
+             servidor: así la ayuda de la interfaz no puede quedar desfasada. #}
+          <dl class="ayuda detalle-lista mt-6">
+            {% for r in roles %}
+            <dt>{{ rol_es[r] }}</dt>
+            <dd>{{ rol_alcance_es[r] }}</dd>
+            {% endfor %}
+          </dl>
+        </div>
+      </div>
+      <div class="campo-fila">
+        <div class="campo">
+          <label for="password">Contraseña inicial</label>
+          <input type="password" id="password" name="password" autocomplete="new-password" minlength="12">
+          <div class="ayuda">Mínimo 12 caracteres y tres clases (minúsculas, mayúsculas, dígitos, símbolos).</div>
+        </div>
+        <div class="campo">
+          <label for="repetir">Repetir contraseña</label>
+          <input type="password" id="repetir" name="repetir" autocomplete="new-password" minlength="12">
+        </div>
+      </div>
+      <div class="casilla">
+        <input type="checkbox" id="generar" name="generar" value="1">
+        <label for="generar">Generar una contraseña segura automáticamente <span class="tenue">— se mostrará una sola vez</span></label>
+      </div>
+      <button class="btn primario" type="submit">Crear usuario</button>
+    </form>
+  </div>
+</div>
+
+{% if editando %}
+{% set propio = editando.username == usuario %}
+<div class="panel" id="editar-usuario">
+  <div class="panel-cabecera">
+    <h2>Editar a {{ editando.identidad }}</h2>
+    <span class="sub">Nombre de la persona, perfil, estado y, si hace falta, una contraseña nueva.
+      El correo <span class="mono">{{ editando.username }}</span> es su nombre de usuario y no se puede
+      cambiar: si la persona cambia de correo, cree otro usuario y elimine este.</span>
+  </div>
+  <div class="panel-cuerpo">
+    <form method="post" action="{{ url_for('usuarios.actualizar', usuario_id=editando.id) }}" autocomplete="off"
+          data-accion-viva="pagina-usuarios" data-accion-espera="Guardando…">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <div class="campo-fila">
+        <div class="campo flex2">
+          <label for="editar-nombre">Nombre y apellidos de la persona <span class="tenue">(obligatorio)</span></label>
+          <input type="text" id="editar-nombre" name="nombre" value="{{ editando.nombre_persona }}" required maxlength="80" autocomplete="off" spellcheck="false">
+          <div class="ayuda">{{ ayuda_nombre }}</div>
+        </div>
+        <div class="campo">
+          <label for="editar-perfil">Perfil</label>
+          <select id="editar-perfil" name="rol"{% if propio %} disabled{% endif %}>
+            {% for r in roles %}<option value="{{ r }}"{% if r == editando.role %} selected{% endif %}>{{ rol_es[r] }}</option>{% endfor %}
+          </select>
+          {% if propio %}<input type="hidden" name="rol" value="{{ editando.role }}">
+          <div class="ayuda">No puede cambiar su propio perfil: debe hacerlo otro administrador.</div>
+          {% else %}<div class="ayuda">Al cambiar el perfil se cierran las sesiones abiertas de esa persona.</div>{% endif %}
+        </div>
+        <div class="campo">
+          <label for="editar-estado">Estado</label>
+          <select id="editar-estado" name="enabled"{% if propio %} disabled{% endif %}>
+            <option value="1"{% if editando.enabled %} selected{% endif %}>Habilitado</option>
+            <option value="0"{% if not editando.enabled %} selected{% endif %}>Deshabilitado</option>
+          </select>
+          {% if propio %}<input type="hidden" name="enabled" value="1">
+          <div class="ayuda">No puede deshabilitar su propia cuenta.</div>
+          {% else %}<div class="ayuda">Deshabilitado pierde el acceso de inmediato y se cierran sus sesiones.</div>{% endif %}
+        </div>
+      </div>
+      {% if propio %}
+      <div class="aviso info" role="status">
+        <div>Para cambiar <strong>su propia</strong> contraseña use
+          <a href="{{ url_for('auth.mi_password') }}">Cambiar mi contraseña</a>: allí se exige la contraseña
+          actual, de modo que nadie que se apodere de una sesión pueda cambiarla sin conocerla.</div>
+      </div>
+      {% else %}
+      <div class="campo-fila">
+        <div class="campo">
+          <label for="editar-password">Contraseña nueva <span class="tenue">(opcional)</span></label>
+          <input type="password" id="editar-password" name="password_nueva" autocomplete="new-password" minlength="12">
+          <div class="ayuda">Déjela vacía para no tocar la contraseña actual. Mínimo 12 caracteres y tres clases
+            (minúsculas, mayúsculas, dígitos, símbolos).</div>
+        </div>
+        <div class="campo">
+          <label for="editar-password-repetir">Repetir la contraseña nueva</label>
+          <input type="password" id="editar-password-repetir" name="password_repetir" autocomplete="new-password" minlength="12">
+          <div class="ayuda">Al guardarla se cierran todas las sesiones de esa persona y deberá cambiarla ella
+            misma en su próximo acceso.</div>
+        </div>
+      </div>
+      {% endif %}
+      <div class="flex-4">
+        <button class="btn primario" type="submit">Guardar cambios</button>
+        <a class="btn" href="{{ url_for('usuarios.lista') }}">Cancelar</a>
+      </div>
+    </form>
+  </div>
+  <div class="panel-pie">
+    Todo cambio queda en la <a href="{{ url_for('panel.auditoria') }}">auditoría</a> con el valor anterior y el
+    nuevo. Las contraseñas nunca se guardan en la auditoría ni se pueden volver a ver.
+  </div>
+</div>
+{% endif %}
+
+<div class="panel" data-tour="2" data-tour-titulo="Gestión" data-tour-texto="Cada fila muestra el nombre de la persona y, debajo, el correo con el que entra. «Editar» abre un formulario con el nombre, el perfil, el estado y una contraseña nueva si hace falta. El selector de la fila cambia perfil o estado al momento, tras confirmar. También puede restablecer la contraseña o el segundo factor, desbloquear una cuenta o eliminarla. Todo queda en la auditoría.">
+  <div class="panel-cabecera"><h2>Usuarios</h2><span class="sub">«Editar» abre el formulario completo (nombre, perfil, estado y contraseña nueva). El perfil y el estado también se aplican al cambiar el selector de la fila, tras confirmar el cambio. Al deshabilitar, eliminar, cambiar o restablecer la contraseña o el segundo factor se cierran las sesiones abiertas de ese usuario.</span></div>
+  <div class="panel-cuerpo sin-relleno">
+    <div class="tabla-envoltorio">
+      <table>
+        <thead><tr><th>Persona y correo de acceso</th><th>Perfil</th><th>Estado</th><th>Último acceso</th><th>Segundo factor</th><th class="num">Sesiones</th><th class="acciones"></th></tr></thead>
+        <tbody>
+        {% for u in usuarios %}
+          <tr>
+            <td>
+              {{ u.identidad }}{% if u.username == usuario %} <span class="insignia info">usted</span>{% endif %}
+              {% if u.falta_nombre %}<div class="pequeno txt-medio">Falta el nombre de la persona: arriba se muestra su correo. <a href="{{ url_for('usuarios.lista', editar=u.id) }}#editar-usuario">Complételo aquí</a>.</div>
+              {% else %}<div class="pequeno tenue">{{ u.username }}</div>{% endif %}
+              {% if not u.es_correo %}<div class="pequeno tenue">Usuario anterior a la política de correo: puede seguir usándolo o crear uno nuevo con correo.</div>{% endif %}
+              {% if u.must_change %}<div class="pequeno txt-medio">Debe cambiar la contraseña en el próximo acceso</div>{% endif %}
+            </td>
+            <td>
+              <form method="post" action="{{ url_for('usuarios.editar', usuario_id=u.id) }}" class="flex-4" id="editar-{{ u.id }}"
+                    data-accion-viva="pagina-usuarios" data-accion-espera="Abriendo…">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <label for="rol-{{ u.id }}" class="oculto-visual">Perfil de {{ u.username }}</label>
+                <select id="rol-{{ u.id }}" name="rol" class="minw-150" data-autosubmit{% if u.username == usuario %} disabled{% endif %}>
+                  {% for r in roles %}<option value="{{ r }}"{% if r == u.role %} selected{% endif %} data-confirmar="¿Cambiar el perfil de {{ u.identidad }} a {{ rol_es[r] }}? {{ rol_alcance_es[r] }} Se cerrarán sus sesiones abiertas.">{{ rol_es[r] }}</option>{% endfor %}
+                </select>
+                {% if u.username == usuario %}<input type="hidden" name="rol" value="{{ u.role }}">{% endif %}
+              </form>
+            </td>
+            <td>
+              <label for="enabled-{{ u.id }}" class="oculto-visual">Estado de {{ u.username }}</label>
+              <select id="enabled-{{ u.id }}" name="enabled" form="editar-{{ u.id }}" class="minw-150" data-autosubmit{% if u.username == usuario %} disabled{% endif %}>
+                <option value="1"{% if u.enabled %} selected{% endif %}>Habilitado</option>
+                <option value="0"{% if not u.enabled %} selected{% endif %} data-confirmar="¿Deshabilitar a {{ u.identidad }}? Perderá el acceso de inmediato y se cerrarán sus sesiones.">Deshabilitado</option>
+              </select>
+              {% if u.username == usuario %}<input type="hidden" name="enabled" value="1" form="editar-{{ u.id }}">{% endif %}
+              {% if u.bloqueado %}<span class="insignia critical" title="Bloqueado por intentos fallidos hasta {{ u.locked_until | fecha_es(con_hora=True) }}">Bloqueado</span>{% endif %}
+              {% if u.failed_logins %}<div class="pequeno tenue">{{ u.failed_logins }} intento{{ 's' if u.failed_logins != 1 }} fallido{{ 's' if u.failed_logins != 1 }}</div>{% endif %}
+            </td>
+            <td class="pequeno nowrap">{{ u.last_login_at | fecha_es(con_hora=True) if u.last_login_at else 'nunca' }}<div class="tenue">creado {{ u.created_at | fecha_es }}</div></td>
+            <td class="pequeno">
+              {% if u.totp_activado_at %}<span class="insignia ok">Activo desde {{ u.totp_activado_at | fecha_es }}</span>
+              {% else %}<span class="insignia neutra">No</span>{% endif %}
+            </td>
+            <td class="num">{{ u.sesiones | numero }}</td>
+            <td class="acciones nowrap">
+              {% if u.username != usuario %}<noscript><button class="btn pequeno" type="submit" form="editar-{{ u.id }}">Guardar rol y estado</button></noscript>{% endif %}
+              <a class="btn pequeno" href="{{ url_for('usuarios.lista', editar=u.id) }}#editar-usuario">Editar</a>
+              <form method="post" action="{{ url_for('usuarios.restablecer', usuario_id=u.id) }}" class="inline"
+                    data-confirm="¿Restablecer la contraseña de {{ u.identidad }}? Se generará una nueva, se cerrarán sus sesiones y deberá cambiarla al entrar."
+                    data-confirm-si="Sí, restablecer la contraseña"
+                    data-accion-viva="pagina-usuarios" data-accion-espera="Restableciendo…">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <button class="btn pequeno" type="submit">Restablecer contraseña</button>
+              </form>
+              {% if u.bloqueado or u.failed_logins %}
+              <form method="post" action="{{ url_for('usuarios.desbloquear', usuario_id=u.id) }}" class="inline"
+                    data-accion-viva="pagina-usuarios" data-accion-espera="Desbloqueando…">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <button class="btn pequeno" type="submit">Desbloquear</button>
+              </form>
+              {% endif %}
+              {% if u.totp_activado_at and u.username == usuario %}
+              <a class="btn pequeno" href="{{ url_for('auth.mi_password') }}" title="El propio segundo factor se desactiva con contraseña y código desde «Cambiar mi contraseña»">Mi segundo factor</a>
+              {% elif u.totp_activado_at %}
+              <form method="post" action="{{ url_for('usuarios.restablecer_segundo_factor', usuario_id=u.id) }}" class="inline"
+                    data-confirm="¿Restablecer el segundo factor de {{ u.identidad }}? Podrá entrar solo con la contraseña hasta que lo active de nuevo; se cerrarán sus sesiones. Hágalo solo si ha comprobado su identidad por otro canal."
+                    data-confirm-si="Sí, restablecer el segundo factor"
+                    data-accion-viva="pagina-usuarios" data-accion-espera="Restableciendo…">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <button class="btn pequeno" type="submit">Restablecer segundo factor</button>
+              </form>
+              {% endif %}
+              {% if u.username != usuario %}
+              <form method="post" action="{{ url_for('usuarios.eliminar', usuario_id=u.id) }}" class="inline"
+                    data-confirm="¿Eliminar al usuario {{ u.identidad }}? Perderá el acceso de inmediato. Esta acción no se puede deshacer."
+                    data-confirm-si="Sí, eliminar"
+                    data-accion-viva="pagina-usuarios" data-accion-espera="Eliminando…">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <button class="btn pequeno peligro" type="submit">Eliminar</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {# Revisión de claridad del 2026-09-15: aquí figuraba el nombre de un programa del
+     servidor. Ningún nombre de fichero sale a la interfaz. Además, el bloqueo se cita
+     con las etiquetas exactas de los dos ajustes que lo gobiernan. #}
+  <div class="panel-pie">
+    Tras los intentos fallidos que fije «Intentos fallidos antes de bloquear» la cuenta queda
+    bloqueada los minutos que fije «Minutos de bloqueo»; ambos están en
+    <a href="{{ url_for('ajustes.panel') }}">Administración → Ajustes → Interfaz</a> y hoy valen
+    cinco intentos y quince minutos. Todas las acciones sobre usuarios quedan en la
+    <a href="{{ url_for('panel.auditoria') }}">auditoría</a>.
+  </div>
+</div>
+</div>{# fin de la zona viva #}
+{% endblock %}

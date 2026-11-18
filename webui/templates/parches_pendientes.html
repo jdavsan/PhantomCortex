@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block titulo %}Correcciones pendientes{% endblock %}
+{% block contenido %}
+{% from "_paginacion.html" import paginacion %}
+{#
+  Seguimiento diario de las vulnerabilidades confirmadas en algún activo para las que todavía
+  no se conoce la versión que las corrige, y aviso cuando la corrección aparece. El seguimiento
+  se abre y se cierra solo (threatintel.parches). Sin style= ni on*= (CSP estricta).
+#}
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Correcciones que todavía no existen" data-tour-texto="Vulnerabilidades confirmadas en algún equipo para las que aún no se conoce la versión que las corrige: el aviso no la publica, el fabricante no ha sacado el parche o la distribución no lo ha empaquetado. La plataforma las consulta cada día y avisa en el correo cuando la corrección aparece.">
+  <div>
+    <h1>Correcciones pendientes</h1>
+    <p>Vulnerabilidades sin versión que las corrija, con el motivo y la fecha de la última búsqueda. Cada fila es una vulnerabilidad, un paquete y una versión del sistema operativo: el mismo fallo puede estar corregido en un sistema y no en otro.</p>
+  </div>
+  <div class="acciones-titulo">
+    <a class="btn" href="{{ url_for('remediaciones.lista') }}">Ver remediación</a>
+    <a class="btn" href="{{ url_for('activos.lista') }}">Ver activos</a>
+  </div>
+</div>
+
+{# ========================================= 1. indicadores #}
+<div class="rejilla c4 mb-18" data-tour="2" data-tour-titulo="Indicadores" data-tour-texto="Cuántas correcciones siguen sin conocerse (una por identificador CVE, paquete y versión del sistema operativo, no una por vulnerabilidad ni por activo), cuántos activos distintos las esperan, cuánto lleva esperando la más antigua y cuántas correcciones han aparecido en los últimos siete días. Mientras no exista corrección, la única defensa son las medidas de contención.">
+  {#
+    «191 en seguimiento» no decía de qué eran 191 (auditoría de tableros del 2026-09-15).
+    Son FILAS del catálogo: una por identificador CVE, paquete y versión del sistema
+    operativo. Sobre la base real, esas 191 filas son 34 identificadores distintos en 58
+    paquetes, presentes en 185 activos. El rótulo lleva ahora su unidad y la nota dice a
+    cuántos identificadores y paquetes corresponden.
+  #}
+  <div class="panel metrica {% if resumen.en_seguimiento %}alto{% else %}exito{% endif %}">
+    <div class="valor">{{ resumen.en_seguimiento | numero }}</div>
+    <div class="etiqueta">{{ 'Corrección en seguimiento' if resumen.en_seguimiento == 1 else 'Correcciones en seguimiento' }}</div>
+    <div class="nota">{% if resumen.en_seguimiento %}una por identificador <abbr title="Common Vulnerabilities and Exposures: identificador público y único de cada vulnerabilidad">CVE</abbr>, paquete y versión del sistema operativo{% if resumen.cve_distintos %}: son {{ resumen.cve_distintos | numero }} identificador{{ 'es' if resumen.cve_distintos != 1 }} distinto{{ 's' if resumen.cve_distintos != 1 }} en {{ resumen.paquetes | numero }} paquete{{ 's' if resumen.paquetes != 1 }}{% endif %}{% else %}todas las vulnerabilidades confirmadas tienen versión que las corrige{% endif %}</div>
+  </div>
+  <div class="panel metrica {% if resumen.activos_expuestos %}critico{% elif resumen.activos_afectados %}alto{% else %}neutro{% endif %}">
+    <div class="valor">{{ resumen.activos_afectados | numero }}</div>
+    {#
+      «Activos afectados» significaba tres cosas distintas en la plataforma: 652 en el
+      Panel, en Amenazas, en Activos y en Remediación (los que tienen alguna
+      vulnerabilidad confirmada), 580 en Informes (los afectados por las amenazas del
+      periodo del informe) y 185 aquí. El alcance va ahora en la propia etiqueta
+      (revisión de claridad del 2026-09-15, punto 2).
+    #}
+    <div class="etiqueta">Activos afectados por vulnerabilidades sin corrección publicada</div>
+    <div class="nota">de los {{ resumen.activos_afectados | numero }}, {% if resumen.activos_expuestos %}{{ resumen.activos_expuestos | numero }} {{ 'está' if resumen.activos_expuestos == 1 else 'están' }} en producción o contingencia{% else %}ninguno está en producción ni en contingencia{% endif %}. No es la cifra de «Activos afectados» del Panel, que cuenta todos los que tienen alguna vulnerabilidad confirmada, tenga corrección o no</div>
+  </div>
+  <div class="panel metrica {% if resumen.mas_antigua_dias and resumen.mas_antigua_dias > 30 %}critico{% elif resumen.mas_antigua_dias %}medio{% else %}neutro{% endif %}">
+    <div class="valor">{% if resumen.mas_antigua_dias is not none %}{{ resumen.mas_antigua_dias | numero }}{% else %}—{% endif %}</div>
+    <div class="etiqueta">Días de la más antigua</div>
+    <div class="nota">{% if resumen.mas_antigua_dias is not none %}desde que se confirmó la primera vulnerabilidad que sigue sin corrección{% else %}no hay ninguna esperando corrección{% endif %}</div>
+  </div>
+  <div class="panel metrica {% if resumen.encontradas_semana %}exito{% else %}neutro{% endif %}">
+    <div class="valor">{{ resumen.encontradas_semana | numero }}</div>
+    {# El rótulo no decía qué se había encontrado (revisión de claridad del 2026-09-15,
+       punto 9): son correcciones que se publicaron, no vulnerabilidades nuevas. #}
+    <div class="etiqueta">{{ 'Corrección publicada en la última semana' if resumen.encontradas_semana == 1 else 'Correcciones publicadas en la última semana' }}</div>
+    <div class="nota">{% if resumen.encontradas_semana %}en los últimos siete días apareció la versión que las corrige y salieron de esta lista{% if resumen.espera_media_es %}; estuvieron esperando {{ resumen.espera_media_es }} días de media{% endif %}{% else %}ninguna corrección nueva en los últimos siete días{% endif %}</div>
+  </div>
+</div>
+
+{# ========================================= 2. por qué falta la versión #}
+<div class="panel" data-tour="3" data-tour-titulo="Por qué falta la versión" data-tour-texto="No todas las esperas son iguales. Si la corrección ya existe para otra versión de la distribución, es cuestión de días; si el fabricante declara que no la va a publicar, hay que contener el riesgo de otra forma (cortafuegos, configuración o retirada del programa). La búsqueda automática vuelve a preguntar a OSV.dev cada día.">
+  <div class="panel-cabecera">
+    <h2>Por qué no se conoce la versión que corrige</h2>
+    <span class="sub">Reparto de las {{ resumen.en_seguimiento | numero }} correcciones en seguimiento{% if resumen.ultima_busqueda_at %}. Última búsqueda automática: {{ resumen.ultima_busqueda_at | fecha_es(con_hora=True) }} ({{ resumen.ultima_busqueda_at | hace }}){% endif %}.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead><tr><th>Motivo</th><th>Qué significa</th><th class="num" title="Filas del seguimiento: una por identificador CVE, paquete y versión del sistema operativo">Correcciones en seguimiento</th></tr></thead>
+        <tbody>
+        {% for clave, texto in motivo_es.items() %}
+          <tr>
+            <td class="nowrap"><span class="insignia {{ motivo_clave.get(clave, 'neutra') }}">{{ texto }}</span></td>
+            <td class="pequeno">
+              {% if clave == 'distro_sin_empaquetar' %}La corrección existe: OSV.dev ya la publica para otra versión de la distribución, pero todavía no para la que está instalada. Suele llegar en los días siguientes.
+              {% elif clave == 'sin_parche_publicado' %}El aviso dice con todas las letras que aún no hay corrección, o la distribución marca el fallo como que no lo va a corregir. Hay que contener el riesgo por otros medios.
+              {% elif clave == 'aviso_sin_version' %}El aviso confirma que el paquete está afectado pero no dice en qué versión se corrige, o solo enumera las versiones vulnerables.
+              {% else %}Ni el registro de la distribución ni el aviso permiten deducir la versión. Se vuelve a consultar cada día.{% endif %}
+            </td>
+            <td class="num {% if resumen.por_motivo.get(clave) %}txt-alto{% else %}tenue{% endif %}">{{ resumen.por_motivo.get(clave, 0) | numero }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {#
+    Conciliación con Remediación (auditoría de tableros del 2026-09-15). Esta página decía
+    «191 en seguimiento» y la de Remediación «1.748 actualizaciones sin versión que
+    instalar» sobre los mismos datos, y las dos cifras convivían sin que nadie dijera que
+    son unidades distintas: aquí se cuenta el catálogo del problema (una fila por
+    identificador, paquete y versión del sistema) y allí el trabajo por máquina (una tarea
+    por activo y origen de paquete). Si el resumen de Remediación no está disponible, el
+    texto se escribe igual, sin la cifra.
+  #}
+  <div class="panel-pie">
+    <strong>Por qué Remediación enseña otra cifra.</strong>
+    Las {{ resumen.en_seguimiento | numero }} de esta página son
+    <strong>correcciones</strong> del catálogo: una por identificador
+    <abbr title="Common Vulnerabilities and Exposures: identificador público y único de cada vulnerabilidad">CVE</abbr>,
+    paquete y versión del sistema operativo, cuente el parque una máquina o mil.
+    <a href="{{ url_for('remediaciones.lista') }}">Remediación</a>
+    {% if actualizaciones_sin_version is not none %}cuenta {{ actualizaciones_sin_version | numero }}
+    <strong>actualizaci{{ 'ón' if actualizaciones_sin_version == 1 else 'ones' }} sin versión que
+    instalar</strong>{% else %}cuenta <strong>actualizaciones sin versión que instalar</strong>{% endif %}:
+    una tarea por activo y origen de paquete, es decir, el mismo problema repetido en cada
+    máquina que lo tiene. Por eso la segunda cifra es mucho mayor, y ninguna de las dos está
+    mal: una mide cuántas correcciones faltan en el mundo y la otra cuánto trabajo generarán
+    aquí el día que se publiquen. Los activos implicados son
+    {{ resumen.activos_afectados | numero }}.
+  </div>
+</div>
+
+{# ========================================= 3. filtros #}
+<div class="panel" data-tour="4" data-tour-titulo="Buscar y cambiar de lista" data-tour-texto="Escriba un CVE, un paquete, un sistema o parte del título de la amenaza y la lista se acota al instante. Con «Ya disponibles» se ven las correcciones que aparecieron, en qué versión y cuánto tiempo se estuvo esperando; son las que anuncia el correo diario en su propia sección.">
+  <div class="panel-cabecera">
+    <h2>Filtros</h2>
+    {% if q or estado != 'seguimiento' %}
+    <div class="panel-acciones"><a class="btn pequeno" href="{{ url_for('parches.lista') }}">Quitar filtros</a></div>
+    {% endif %}
+    <span class="sub">Por defecto se muestran las que siguen esperando corrección.</span>
+  </div>
+  <div class="panel-cuerpo">
+    <form method="get" class="filtros" action="{{ url_for('parches.lista') }}" data-filtro-vivo="tabla-parches">
+      <div class="campo flex2-220">
+        <label for="q">Vulnerabilidad, paquete o sistema</label>
+        <input type="text" id="q" name="q" value="{{ q }}" placeholder="CVE-2026-20348, clamav, Debian 13…">
+      </div>
+      <div class="campo">
+        <label for="estado">Lista</label>
+        <select id="estado" name="estado">
+          <option value="seguimiento" {% if estado == 'seguimiento' %}selected{% endif %}>En seguimiento</option>
+          <option value="encontradas" {% if estado == 'encontradas' %}selected{% endif %}>Ya disponibles</option>
+        </select>
+      </div>
+      <div class="campo minw-auto"><button type="submit" class="btn primario">Filtrar</button></div>
+    </form>
+  </div>
+</div>
+
+{# ========================================= 4. listado #}
+<div class="panel" id="tabla-parches" tabindex="-1" data-zona-viva
+     data-zona-nombre="Correcciones pendientes" data-tour="5" data-tour-titulo="La cola de espera, una fila por vulnerabilidad, paquete y sistema" data-tour-texto="Esto no es trabajo pendiente: es trabajo que todavía no se puede hacer, porque no existe versión a la que actualizar. «Activos» son las máquinas con el paquete vulnerable instalado y «Activos en producción o contingencia» los que están en esos dos entornos. «Activo más expuesto» es la máquina que más urge vigilar mientras no haya corrección, que es donde hay que aplicar contención. «Días esperando» cuenta desde que se detectó. «Última búsqueda» e «intentos» dicen cuándo se preguntó por última vez a la fuente y cuántas veces. En «Ya disponibles» aparece la versión que corrige y el aviso que la publica: eso sí se puede aplicar, y el correo diario lo anuncia el mismo día.">
+  {#
+    «Fila» era una etiqueta vaga y se repetia con dos significados en el mismo texto
+    («120 filas · página 1 de 3 · filas 1 a 50»). Se nombra lo que se lista: son
+    correcciones pendientes en la lista de seguimiento y correcciones encontradas en
+    la de «Ya disponibles» (hallazgo del revisor, 2026-09-07).
+  #}
+  {% set singular_lista = 'corrección pendiente' if estado != 'encontradas' else 'corrección encontrada' %}
+  {% set plural_lista = 'correcciones pendientes' if estado != 'encontradas' else 'correcciones encontradas' %}
+  <div class="panel-cabecera">
+    <h2>{{ estado_es.get(estado, 'En seguimiento') }}</h2>
+    <span class="sub">{{ total | numero }} {{ singular_lista if total == 1 else plural_lista }}{% if q %} que coinciden con «{{ q }}»{% endif %}{% if paginas > 1 %}, en {{ paginas | numero }} páginas de {{ por_pagina | numero }}{% endif %}. {% if estado == 'seguimiento' %}Primero las que más activos en producción o contingencia afectan.{% else %}Primero las correcciones más recientes.{% endif %}</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno">
+    {% if alcanzables is defined and alcanzables < total %}
+    <div class="aviso info" role="status"><div>En pantalla se pueden recorrer las primeras
+      {{ alcanzables | numero }} {{ plural_lista }} de las {{ total | numero }} que cumplen el filtro,
+      repartidas en {{ paginas | numero }} páginas de {{ por_pagina | numero }}. Para llegar al resto,
+      acote la lista con el buscador.</div></div>
+    {% endif %}
+    {% if paginas > 1 and pagina == 1 %}
+    <div class="aviso info" role="status"><div>Se muestran las {{ filas | length | numero }} primeras de {{ total | numero }} {{ plural_lista }}, repartidas en {{ paginas | numero }} páginas: use los controles del final de la tabla para recorrerlas o acote la lista con el buscador.</div></div>
+    {% endif %}
+    {% if filas %}
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead>
+          {% if estado == 'seguimiento' %}
+          <tr><th class="minw-220">Vulnerabilidad</th><th>Paquete</th><th>Sistema</th><th class="minw-220">Motivo</th><th class="num">Activos</th><th class="num minw-110" title="De esos activos, los que están en producción o contingencia">Activos en producción o contingencia</th><th class="minw-180" title="El activo de esta espera que más urge vigilar: mientras no exista corrección, la única defensa es la contención">Activo más expuesto</th><th class="num minw-100" title="Días desde que se detectó, esperando a que se publique la corrección">Días esperando</th><th>Última búsqueda</th><th class="num" title="Veces que se ha consultado a la fuente">Intentos</th></tr>
+          {% else %}
+          <tr><th class="minw-220">Vulnerabilidad</th><th>Paquete</th><th>Sistema</th><th>Versión que corrige</th><th>Aviso</th><th class="num">Activos</th><th>Detectada</th><th>Corrección publicada</th><th class="num" title="Días entre la detección y la aparición de la corrección">Días de espera</th></tr>
+          {% endif %}
+        </thead>
+        <tbody>
+        {% for f in filas %}
+          <tr>
+            <td>
+              {% if f.threat_id %}<a href="{{ url_for('amenazas.detalle', threat_id=f.threat_id) }}">{{ f.titulo | recortar(64) }}</a>{% else %}{{ f.titulo | recortar(64) }}{% endif %}
+              <div class="pequeno tenue mono">{{ f.cve }}</div>
+              <div class="flex-4">
+                {% if f.severidad %}<span class="insignia {{ f.severidad | lower }}">{{ f.severidad | severidad_es }}</span>{% endif %}
+                {% if f.in_kev %}<span class="insignia kev" title="Explotación activa confirmada por CISA">KEV</span>{% endif %}
+              </div>
+            </td>
+            <td class="mono pequeno">{{ f.paquete }}</td>
+            <td class="pequeno nowrap">{{ f.sistema }}</td>
+            {% if estado == 'seguimiento' %}
+            <td class="pequeno">
+              <span class="insignia {{ f.motivo_clave }}">{{ f.motivo_es }}</span>
+              {% if f.motivo_detalle %}<div class="tenue mt-8">{{ f.motivo_detalle | recortar(190) }}</div>{% endif %}
+            </td>
+            <td class="num">{{ f.n_activos | numero }}</td>
+            <td class="num {% if f.n_activos_expuestos %}txt-critico-b{% else %}tenue{% endif %}">{{ f.n_activos_expuestos | numero }}</td>
+            {#
+              El activo más expuesto de la espera (2026-09-10). La página decía «37
+              activos» de una espera de 60 días y no se podía saber si eran 37 puestos
+              de pruebas o el servidor de nómina en producción; mientras no haya
+              corrección, la contención se decide mirando esa máquina.
+            #}
+            <td class="pequeno">
+              {% if f.activo_mas_expuesto %}
+              <span class="insignia {{ 'alto' if f.activo_mas_expuesto.expuesto else 'neutra' }}">{{ f.activo_mas_expuesto.entorno_es }}</span>
+              <div class="mt-8">{{ f.activo_mas_expuesto.nombre }}</div>
+              <div class="tenue">{{ f.activo_mas_expuesto.origen_es }}{% if f.activo_mas_expuesto.proceso %} · {{ f.activo_mas_expuesto.proceso }}{% endif %}</div>
+              {% else %}<span class="tenue">ningún activo presente lo tiene hoy</span>{% endif %}
+            </td>
+            <td class="num {% if f.dias_en_espera >= 30 %}txt-alto{% else %}tenue{% endif %}" title="Detectada el {{ f.detectado_at | fecha_es }}">{{ f.dias_en_espera | numero }}</td>
+            <td class="pequeno nowrap">{% if f.buscado_at %}{{ f.buscado_at | fecha_es }}<div class="tenue">{{ f.buscado_at | hace }}</div>{% else %}<span class="tenue">todavía no se ha buscado</span>{% endif %}</td>
+            <td class="num">{{ f.intentos | numero }}</td>
+            {% else %}
+            <td class="mono pequeno txt-exito">{{ f.version_corregida or '—' }}</td>
+            <td class="pequeno">{% if f.aviso %}{{ f.aviso }}{% else %}<span class="tenue">sin aviso con identificador</span>{% endif %}</td>
+            <td class="num">{{ f.n_activos | numero }}{% if f.n_activos_expuestos %}<div class="pequeno txt-critico">{{ f.n_activos_expuestos | numero }} en producción o contingencia</div>{% endif %}</td>
+            <td class="pequeno nowrap">{{ f.detectado_at | fecha_es }}</td>
+            <td class="pequeno nowrap">{{ f.encontrado_at | fecha_es }}<div class="tenue">{% if f.avisado_at %}anunciada en el correo del {{ f.avisado_at | fecha_es }}{% else %}se anunciará en el próximo correo{% endif %}</div></td>
+            <td class="num">{{ f.dias_en_espera | numero }}</td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {{ paginacion('parches.lista', args, pagina, paginas, total, por_pagina,
+                  singular=singular_lista, plural=plural_lista, ancla='tabla-parches', zona='tabla-parches',
+                  titulo='Paginación de las correcciones pendientes') }}
+    {% else %}
+    <div class="vacio">
+      <p>{% if q %}Ninguna fila coincide con «{{ q }}».{% elif estado == 'encontradas' %}Todavía no ha aparecido ninguna corrección de las que se están esperando.{% else %}No hay vulnerabilidades confirmadas sin versión que las corrija.{% endif %}</p>
+      <p class="pequeno">El seguimiento se actualiza solo en cada sincronización con OCS Inventory y en la ejecución diaria: entra lo que la evaluación confirma como afectado sin versión que lo corrija, y sale cuando la corrección aparece o el paquete deja de estar instalado.</p>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

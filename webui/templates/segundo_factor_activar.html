@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block titulo %}{% if codigos %}Códigos de recuperación{% else %}Activar el segundo factor{% endif %}{% endblock %}
+{% block contenido %}
+{#
+  Dos estados en una misma página:
+    * activación: código QR + secreto en texto + campo para el primer código;
+    * códigos de recuperación (tras activar o regenerar): se muestran UNA sola vez.
+  Sin style= ni on*= (CSP estricta). El QR es SVG en línea generado por segno.
+#}
+{% if codigos %}
+<div class="titulo-pagina" data-tour="4" data-tour-titulo="Códigos de recuperación" data-tour-texto="Estos ocho códigos permiten entrar si pierde el teléfono con la aplicación. Cada uno sirve una sola vez y no se volverán a mostrar: guárdelos ahora en un lugar seguro.">
+  <div>
+    <h1>{{ titulo_codigos or 'Códigos de recuperación' }}</h1>
+    <p>Guárdelos ahora en un lugar seguro (gestor de contraseñas o impresos y bajo llave).
+       <strong>No se volverán a mostrar.</strong> Cada código sirve una sola vez.</p>
+  </div>
+  <div class="acciones-titulo">
+    <a class="btn primario" href="{{ url_for('auth.perfil') }}">He guardado los códigos</a>
+  </div>
+</div>
+<div class="panel maxw-480" data-tour="5" data-tour-titulo="Cómo usarlos" data-tour-texto="En la pantalla del segundo factor escriba uno de estos códigos en lugar del código de la aplicación. Cuando le queden pocos, regenérelos desde «Cambiar mi contraseña».">
+  <div class="panel-cabecera"><h2>{{ codigos | length | numero }} códigos de un solo uso</h2><span class="sub">Escriba uno de ellos en la pantalla del segundo factor cuando no tenga la aplicación.</span></div>
+  <div class="panel-cuerpo">
+    <ul class="lista-lineas mono">
+      {% for c in codigos %}<li>{{ c }}</li>{% endfor %}
+    </ul>
+  </div>
+  <div class="panel-pie pequeno">
+    Si los pierde, puede regenerarlos con su contraseña desde <a href="{{ url_for('auth.perfil') }}">Mi perfil</a>;
+    si además pierde el teléfono, un administrador puede restablecer su segundo factor.
+  </div>
+</div>
+{% else %}
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Activar el segundo factor" data-tour-texto="Además de la contraseña, al entrar se pedirá un código de seis dígitos que cambia cada treinta segundos y que genera una aplicación en su teléfono.">
+  <div>
+    <h1>Activar el segundo factor</h1>
+    <p>Al entrar se pedirá, además de la contraseña, un código de seis dígitos que genera una
+       aplicación de su teléfono (Microsoft Authenticator, Google Authenticator, Aegis, FreeOTP…).</p>
+  </div>
+</div>
+{% if not qr %}
+<div class="panel maxw-480" data-tour="6" data-tour-titulo="Empezar" data-tour-texto="Al pulsar el botón se genera un código QR que se añade a la aplicación de códigos del teléfono. Tiene {{ minutos }} minutos para confirmarlo con el primer código; si tarda más, basta con volver a empezar.">
+  <div class="panel-cabecera">
+    <h2>Antes de empezar</h2>
+    <span class="sub">Necesita una aplicación de códigos en el teléfono: Microsoft Authenticator, Google Authenticator, Aegis o FreeOTP, entre otras. Son gratuitas y funcionan sin conexión.</span>
+  </div>
+  <div class="panel-cuerpo">
+    <p class="pequeno suave">Al pulsar el botón se muestra un código QR para añadir esta cuenta a la aplicación.
+       Después escribirá el primer código de seis dígitos para confirmar, y recibirá ocho códigos de recuperación
+       por si algún día pierde el teléfono. Tiene {{ minutos }} minutos para completar el proceso.</p>
+    <form method="post" action="{{ url_for('auth.segundo_factor_activar') }}">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <input type="hidden" name="empezar" value="1">
+      <button class="btn primario" type="submit">Generar el código QR</button>
+      <a class="btn" href="{{ url_for('auth.perfil') }}">Cancelar</a>
+    </form>
+  </div>
+</div>
+{% else %}
+<div class="rejilla c2">
+  <div class="panel" data-tour="2" data-tour-titulo="Paso 1: escanear" data-tour-texto="Abra la aplicación de códigos, elija «Añadir cuenta» y escanee este código QR. Si no puede escanear, escriba el secreto a mano en la aplicación.">
+    <div class="panel-cabecera"><h2>Paso 1 · Añada la cuenta en la aplicación</h2><span class="sub">Escanee el código QR o escriba el secreto a mano.</span></div>
+    <div class="panel-cuerpo centrado">
+      {{ qr }}
+      <p class="pequeno tenue mt-12">Si no puede escanear, introduzca este secreto en la aplicación (tipo «basado en tiempo», seis dígitos):</p>
+      <p class="mono envolver">{{ secreto }}</p>
+    </div>
+    <div class="panel-pie pequeno">Este código caduca en {{ minutos | numero }} minutos. Si tarda más, recargue la página para obtener uno nuevo.</div>
+  </div>
+  <div class="panel" data-tour="3" data-tour-titulo="Paso 2: confirmar" data-tour-texto="Escriba el código de seis dígitos que muestra ahora la aplicación. Si coincide, el segundo factor queda activado y verá sus códigos de recuperación.">
+    <div class="panel-cabecera"><h2>Paso 2 · Confirme con el primer código</h2><span class="sub">Así comprobamos que la aplicación quedó bien configurada antes de exigir el código.</span></div>
+    <div class="panel-cuerpo">
+      <form method="post" action="{{ url_for('auth.segundo_factor_activar') }}" autocomplete="off">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="campo">
+          <label for="codigo">Código de seis dígitos que muestra la aplicación</label>
+          <input type="text" id="codigo" name="codigo" required autofocus inputmode="numeric"
+                 autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" class="mono">
+          <div class="ayuda">Si el código no coincide, compruebe que la hora del teléfono es automática.</div>
+        </div>
+        <button class="btn primario" type="submit">Activar el segundo factor</button>
+        <a class="btn" href="{{ url_for('auth.perfil') }}">Cancelar</a>
+      </form>
+    </div>
+    <div class="panel-pie pequeno">Al activarlo se cerrarán sus otras sesiones abiertas y recibirá ocho códigos de recuperación de un solo uso.</div>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% set colores = {'critical': '#b3261e', 'warning': '#c05621', 'info': '#1f4e78'} %}
+{% set fondos = {'critical': '#fdecea', 'warning': '#fef2e7', 'info': '#ebf3fb'} %}
+{% set textos = {'critical': '#8c1d18', 'warning': '#8a3d12', 'info': '#1c4f80'} %}
+
+{% block titulo %}{{ titulo }}{% endblock %}
+{% block color_barra %}{{ colores.get(severidad, '#1f4e78') }}{% endblock %}
+{% block etiqueta_cabecera %}
+{% if severidad == 'critical' %}Acción requerida{% elif severidad == 'warning' %}Aviso{% else %}Información{% endif %}
+<br>{{ None|fecha_larga }}
+{% endblock %}
+
+{% block preencabezado %}{{ intro|recortar(140) }}{% endblock %}
+
+{% block contenido %}
+
+<h1 style="margin:0 0 16px 0; font-size:18px; color:#1f2933; font-weight:bold;">
+  {{ titulo }}
+</h1>
+
+{% if acciones %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 20px 0; background-color:{{ fondos.get(severidad, '#ebf3fb') }};
+              border-left:4px solid {{ colores.get(severidad, '#1f4e78') }};">
+  <tr>
+    <td style="padding:14px 16px; font-family:Arial,Helvetica,sans-serif;
+               font-size:13px; color:{{ textos.get(severidad, '#1c4f80') }};
+               line-height:1.6;">
+      <strong style="font-size:13px;">
+        {% if severidad == 'critical' %}Acción requerida
+        {% elif severidad == 'warning' %}Se recomienda actuar
+        {% else %}Para su información{% endif %}
+      </strong>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0"
+             style="margin-top:8px;">
+        {% for accion in acciones %}
+        <tr>
+          <td valign="top" width="16" style="font-family:Arial,Helvetica,sans-serif;
+                     font-size:13px; padding:2px 0;">{{ loop.index }}.</td>
+          <td style="font-family:Arial,Helvetica,sans-serif; font-size:13px;
+                     padding:2px 0 2px 6px; line-height:1.55;">{{ accion }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </td>
+  </tr>
+</table>
+{% endif %}
+
+<p style="margin:0 0 20px 0; line-height:1.65;">{{ intro }}</p>
+
+{% for seccion in secciones %}
+<div style="font-family:Arial,Helvetica,sans-serif; font-size:12px; font-weight:bold;
+            color:#4a5563; text-transform:uppercase; letter-spacing:.04em;
+            margin:0 0 8px 0;">{{ seccion.titulo }}</div>
+
+{% if seccion.filas is defined %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 20px 0; border:1px solid #e3e7ec; border-collapse:collapse;">
+  {% for clave, valor in seccion.filas %}
+  <tr style="background-color:{{ '#ffffff' if loop.index0 % 2 == 0 else '#fafbfc' }};">
+    <td width="200" valign="top"
+        style="padding:8px 14px; font-family:Arial,Helvetica,sans-serif; font-size:12px;
+               color:#77828f; border-bottom:1px solid #eef0f3;">{{ clave }}</td>
+    <td valign="top"
+        style="padding:8px 14px 8px 0; font-family:Arial,Helvetica,sans-serif;
+               font-size:12px; color:#2b3540; border-bottom:1px solid #eef0f3;
+               line-height:1.55;">{{ valor }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if seccion.tabla is defined %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 20px 0; border:1px solid #e3e7ec; border-collapse:collapse;">
+  <tr style="background-color:#f2f4f7;">
+    {% for cabecera in seccion.tabla.cabeceras %}
+    <th align="left" style="padding:7px 12px; font-family:Arial,Helvetica,sans-serif;
+        font-size:10px; color:#63707e; text-transform:uppercase; letter-spacing:.04em;
+        border-bottom:1px solid #d8dce2;">{{ cabecera }}</th>
+    {% endfor %}
+  </tr>
+  {% for fila in seccion.tabla.filas %}
+  <tr style="background-color:{{ '#ffffff' if loop.index0 % 2 == 0 else '#fafbfc' }};">
+    {% for celda in fila %}
+    <td valign="top" style="padding:7px 12px; font-family:Arial,Helvetica,sans-serif;
+        font-size:12px; color:#2b3540; border-bottom:1px solid #eef0f3;
+        line-height:1.5;">{{ celda }}</td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+{% endfor %}
+
+{% if pie %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:6px 0 0 0; border-top:1px solid #e3e7ec;">
+  <tr>
+    <td style="padding:14px 0 0 0; font-family:Arial,Helvetica,sans-serif;
+               font-size:11px; color:#8a939f; line-height:1.6;">{{ pie }}</td>
+  </tr>
+</table>
+{% endif %}
+
+{% endblock %}

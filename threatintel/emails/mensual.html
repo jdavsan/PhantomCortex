@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+
+{% block titulo %}Informe mensual de inteligencia de amenazas{% endblock %}
+{% block color_barra %}#1f4e78{% endblock %}
+{% block etiqueta_cabecera %}Informe mensual<br>{{ month|mes_largo }}{% endblock %}
+
+{% block preencabezado %}
+Informe de {{ month|mes_largo }}: {{ total|numero }} vulnerabilidades, {{ criticas|numero }} críticas
+{% endblock %}
+
+{% block contenido %}
+
+<h1 style="margin:0 0 6px 0; font-size:19px; color:#1f2933; font-weight:bold;">
+  Informe mensual de inteligencia de amenazas
+</h1>
+<p style="margin:0 0 22px 0; font-size:13px; color:#63707e;">
+  Periodo: {{ month|mes_largo }} · emitido el {{ None|fecha_larga }}
+</p>
+
+<p style="margin:0 0 14px 0;">Estimado equipo:</p>
+
+<p style="margin:0 0 14px 0;">
+  Se {% if ejecutivo_kb %}adjuntan los informes de inteligencia de amenazas correspondientes{% else %}adjunta el informe de inteligencia de amenazas correspondiente{% endif %} a
+  <strong>{{ month|mes_largo }}</strong>. {% if ejecutivo_kb %}Recogen{% else %}Recoge{% endif %} las vulnerabilidades publicadas
+  durante el periodo que guardan relación con el inventario tecnológico de la
+  organización, priorizadas según su repercusión real sobre nuestros sistemas.
+  {% if ejecutivo_kb %}El informe ejecutivo, de diez páginas como máximo, resume el mes en
+  cifras y comparaciones para quien no necesita el detalle técnico.{% endif %}
+</p>
+
+{% if en_kev %}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 18px 0; background-color:#fdecea; border-left:4px solid #b3261e;">
+  <tr>
+    <td style="padding:13px 16px; font-family:Arial,Helvetica,sans-serif;
+               font-size:13px; color:#8c1d18; line-height:1.55;">
+      <strong>Atención.</strong> {{ en_kev|numero }} de las vulnerabilidades del periodo
+      cuentan con explotación activa confirmada en el catálogo KEV de CISA. El
+      apartado de vulnerabilidades prioritarias del informe detalla su estado.
+    </td>
+  </tr>
+</table>
+{% endif %}
+
+<div style="font-family:Arial,Helvetica,sans-serif; font-size:12px; font-weight:bold;
+            color:#4a5563; text-transform:uppercase; letter-spacing:.04em;
+            margin:0 0 8px 0;">
+  Cifras del periodo
+</div>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 22px 0; border:1px solid #e3e7ec; border-collapse:collapse;">
+  {# Revisión de claridad del 2026-09-15: los porcentajes salían con punto decimal y
+     «Versión confirmada vulnerable» era el mismo rótulo que el recuento por activo y
+     paquete del informe, que da una cifra mucho mayor. #}
+  {% for etiqueta, valor, nota in [
+      ('Vulnerabilidades registradas', total|numero, 'relacionadas con el inventario'),
+      ('Severidad crítica', criticas|numero, (pct_criticas|decimal(1)) ~ ' % del total'),
+      ('Severidad alta', altas|numero, (pct_altas|decimal(1)) ~ ' % del total'),
+      ('Con explotación activa confirmada', en_kev|numero, 'catálogo CISA KEV'),
+      ('Con puntuación oficial', sev_nvd|numero, (pct_con_cvss_real|decimal(1)) ~ ' % del total'),
+      ('Con la versión vulnerable confirmada en el inventario de tecnologías',
+       confirmadas_afectadas|numero, 'recuento por tecnología, no por activo') ] %}
+  <tr style="background-color:{{ '#ffffff' if loop.index0 % 2 == 0 else '#fafbfc' }};">
+    <td style="padding:9px 14px; font-family:Arial,Helvetica,sans-serif; font-size:12px;
+               color:#4a5563; border-bottom:1px solid #eef0f3;">{{ etiqueta }}</td>
+    <td align="right" width="80"
+        style="padding:9px 8px; font-family:Arial,Helvetica,sans-serif; font-size:15px;
+               font-weight:bold; color:#1f2933; border-bottom:1px solid #eef0f3;">{{ valor }}</td>
+    <td width="180"
+        style="padding:9px 14px 9px 8px; font-family:Arial,Helvetica,sans-serif;
+               font-size:11px; color:#8a939f; border-bottom:1px solid #eef0f3;">{{ nota }}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+{% if bloques and bloques.conteo %}
+<div style="font-family:Arial,Helvetica,sans-serif; font-size:12px; font-weight:bold;
+            color:#4a5563; text-transform:uppercase; letter-spacing:.04em;
+            margin:0 0 8px 0;">
+  Cómo se reparte el periodo
+</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 22px 0; border:1px solid #e3e7ec; border-collapse:collapse;">
+  {% for clave, etiqueta, nota, color in [
+      ('requiere_accion', 'Requiere acción', 'alertadas, con explotación activa o relevancia ≥ ' ~ (bloques.umbral|round(0)|int), '#b3261e'),
+      ('seguimiento', 'Seguimiento', 'afectan al inventario con menor relevancia o esperan dato oficial', '#8a6d0b'),
+      ('informativo', 'Informativo', 'noticias, campañas y menciones sin prueba de exposición', '#63707e'),
+      ('cerrada', 'Cerradas por el equipo', 'descartadas o falsos positivos', '#8a939f') ] %}
+  <tr style="background-color:{{ '#ffffff' if loop.index0 % 2 == 0 else '#fafbfc' }};">
+    <td style="padding:9px 14px; font-family:Arial,Helvetica,sans-serif; font-size:12px;
+               color:{{ color }}; font-weight:bold; border-bottom:1px solid #eef0f3;">{{ etiqueta }}</td>
+    <td align="right" width="80"
+        style="padding:9px 8px; font-family:Arial,Helvetica,sans-serif; font-size:15px;
+               font-weight:bold; color:#1f2933; border-bottom:1px solid #eef0f3;">{{ bloques.conteo[clave]|numero }}</td>
+    <td style="padding:9px 14px 9px 8px; font-family:Arial,Helvetica,sans-serif;
+               font-size:11px; color:#8a939f; border-bottom:1px solid #eef0f3;">{{ nota }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if activos and activos.total %}
+<div style="font-family:Arial,Helvetica,sans-serif; font-size:12px; font-weight:bold;
+            color:#4a5563; text-transform:uppercase; letter-spacing:.04em;
+            margin:0 0 8px 0;">
+  Inventario real (OCS Inventory)
+</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 22px 0; border:1px solid #e3e7ec; border-collapse:collapse;">
+  {# «activos.afectados» es solo lo que cabe en la tabla del informe; el total real viene
+     en «activos_afectados» (2026-09-15). #}
+  {% for etiqueta, valor, nota in [
+      ('Activos con la versión vulnerable instalada', (activos.activos_afectados or activos.afectados|length)|numero, 'de ' ~ (activos.total|numero) ~ ' activos presentes; detalle en el informe adjunto'),
+      ('Activos fuera de soporte', activos.fuera_soporte|numero, 'sin actualizaciones de seguridad'),
+      ('Activos sin reportar', activos.sin_reportar|numero, 'más de ' ~ ((activos.dias_sin_reportar or 30)|numero) ~ ' días sin enviar inventario'),
+      ('Software clasificado', (activos.pct_mapeado|decimal(1)) ~ ' %', 'instalaciones con tecnología del inventario') ] %}
+  <tr style="background-color:{{ '#ffffff' if loop.index0 % 2 == 0 else '#fafbfc' }};">
+    <td style="padding:9px 14px; font-family:Arial,Helvetica,sans-serif; font-size:12px;
+               color:#4a5563; border-bottom:1px solid #eef0f3;">{{ etiqueta }}</td>
+    <td align="right" width="80"
+        style="padding:9px 8px; font-family:Arial,Helvetica,sans-serif; font-size:15px;
+               font-weight:bold; color:#1f2933; border-bottom:1px solid #eef0f3;">{{ valor }}</td>
+    <td width="180"
+        style="padding:9px 14px 9px 8px; font-family:Arial,Helvetica,sans-serif;
+               font-size:11px; color:#8a939f; border-bottom:1px solid #eef0f3;">{{ nota }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+{% if top_tecnologias %}
+<div style="font-family:Arial,Helvetica,sans-serif; font-size:12px; font-weight:bold;
+            color:#4a5563; text-transform:uppercase; letter-spacing:.04em;
+            margin:0 0 8px 0;">
+  Tecnologías con mayor concentración de hallazgos
+</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 22px 0; border:1px solid #e3e7ec; border-collapse:collapse;">
+  <tr style="background-color:#f2f4f7;">
+    <th align="left" style="padding:7px 12px; font-family:Arial,Helvetica,sans-serif;
+        font-size:10px; color:#63707e; text-transform:uppercase; letter-spacing:.04em;
+        border-bottom:1px solid #d8dce2;">Tecnología</th>
+    <th align="left" width="90" style="padding:7px 8px; font-family:Arial,Helvetica,sans-serif;
+        font-size:10px; color:#63707e; text-transform:uppercase; letter-spacing:.04em;
+        border-bottom:1px solid #d8dce2;">Versión</th>
+    <th align="right" width="70" style="padding:7px 12px; font-family:Arial,Helvetica,sans-serif;
+        font-size:10px; color:#63707e; text-transform:uppercase; letter-spacing:.04em;
+        border-bottom:1px solid #d8dce2;">Críticas</th>
+    <th align="right" width="70" style="padding:7px 12px; font-family:Arial,Helvetica,sans-serif;
+        font-size:10px; color:#63707e; text-transform:uppercase; letter-spacing:.04em;
+        border-bottom:1px solid #d8dce2;">Total</th>
+  </tr>
+  {% for t in top_tecnologias[:8] %}
+  <tr style="background-color:{{ '#ffffff' if loop.index0 % 2 == 0 else '#fafbfc' }};">
+    <td style="padding:7px 12px; font-family:Arial,Helvetica,sans-serif; font-size:12px;
+               color:#2b3540; border-bottom:1px solid #eef0f3;">{{ t.name }}</td>
+    <td style="padding:7px 8px; font-family:Consolas,monospace; font-size:11px;
+               color:#63707e; border-bottom:1px solid #eef0f3;">
+      {{ t.version_installed or '—' }}</td>
+    <td align="right" style="padding:7px 12px; font-family:Arial,Helvetica,sans-serif;
+               font-size:12px; color:#b3261e; font-weight:bold;
+               border-bottom:1px solid #eef0f3;">{{ t.criticas or 0 }}</td>
+    <td align="right" style="padding:7px 12px; font-family:Arial,Helvetica,sans-serif;
+               font-size:12px; color:#4a5563; border-bottom:1px solid #eef0f3;">{{ t.amenazas }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:0 0 20px 0; background-color:#f2f6fb; border:1px solid #d6e2ef;">
+  <tr>
+    <td style="padding:14px 16px; font-family:Arial,Helvetica,sans-serif;
+               font-size:12px; color:#2b3540; line-height:1.6;">
+      {# Revisión de claridad del 2026-09-15: ningún nombre de fichero se escribe en el
+         cuerpo del correo; se describe QUÉ es el adjunto. El nombre real sigue siendo el
+         del fichero que el gestor de correo enseña junto al clip. #}
+      {# Desde el 2026-09-15 van DOS documentos: el informe mensual completo de siempre y
+         el informe ejecutivo de diez páginas para gerencia. El correo dice cuál es cuál y
+         para quién es cada uno, porque si no el segundo se abre por curiosidad o no se
+         abre. ``ejecutivo_kb`` solo llega cuando el segundo documento se generó. #}
+      <strong style="color:#1f4e78;">{% if ejecutivo_kb %}Documentos adjuntos: 2{% else %}Documento adjunto{% endif %}</strong><br>
+      <strong style="color:#2b3540;">1. Informe mensual completo</strong> de {{ month|mes_largo }}, en formato Microsoft Word
+      {% if tamano_kb %}<span style="color:#8a939f;">· {{ tamano_kb }} kilobytes</span>{% endif %}
+      <br>
+      <span style="color:#63707e;">
+        Contiene el resumen ejecutivo, el panorama del
+        periodo, la exposición de la organización, la ficha detallada de las
+        vulnerabilidades prioritarias y un anexo con el resto de hallazgos.
+        Es el documento de trabajo para la administración técnica de la plataforma.
+      </span>
+      {% if ejecutivo_kb %}
+      <br><br>
+      <strong style="color:#2b3540;">2. Informe ejecutivo</strong> de {{ month|mes_largo }}, en formato Microsoft Word
+      <span style="color:#8a939f;">· {{ ejecutivo_kb }} kilobytes</span><br>
+      <span style="color:#63707e;">
+        Diez páginas como máximo, para gerencia: las cifras del mes, la comparación con el
+        mes anterior y con el mismo mes del año pasado, el avance entre vulnerabilidades
+        detectadas y remediadas, dónde está el trabajo pendiente y tres o cuatro
+        recomendaciones. Sin detalle técnico.
+      </span>
+      {% endif %}
+    </td>
+  </tr>
+</table>
+
+{% if url_interfaz %}
+<p style="margin:0 0 18px 0; font-size:12px; color:#63707e;">
+  El detalle completo y el histórico están disponibles en la interfaz de consulta:
+  <a href="{{ url_interfaz|url_segura }}" style="color:#1f4e78;">{{ url_interfaz }}</a>
+</p>
+{% endif %}
+
+<p style="margin:0 0 4px 0;">Atentamente,</p>
+<p style="margin:0 0 18px 0; color:#4a5563;">
+  Sistema Automatizado de Inteligencia de Amenazas<br>
+  <span style="font-size:12px; color:#77828f;">{{ proceso }}</span>
+</p>
+
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+       style="margin:6px 0 0 0; border-top:1px solid #e3e7ec;">
+  <tr>
+    <td style="padding:14px 0 0 0; font-family:Arial,Helvetica,sans-serif;
+               font-size:11px; color:#8a939f; line-height:1.6;">
+      <strong style="color:#63707e;">Nota metodológica.</strong>
+      {{ sev_nvd|numero }} de los {{ total|numero }} registros cuentan con puntuación
+      CVSS oficial del NVD. El resto se clasificó mediante estimación por indicios
+      textuales, circunstancia que se indica de forma explícita en cada ficha del
+      informe. Las severidades estimadas no constituyen puntuaciones CVSS oficiales.
+    </td>
+  </tr>
+</table>
+
+{% endblock %}

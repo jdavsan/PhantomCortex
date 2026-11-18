@@ -1,103 +1,250 @@
-# 🚀 PhantomCortex - Quick Start Guide
+# 🚀 INICIO RÁPIDO - THREAT INTELLIGENCE SYSTEM
 
-Get up and running in 5 minutes!
+## ⚡ Instalación en 5 Minutos
 
-## ⚡ Fast Installation
+### 1️⃣ Descomprimir el archivo
 
 ```bash
-# 1. Clone repository
-git clone https://github.com/yourusername/PhantomCortex.git
-cd PhantomCortex
+# Descomprimir
+tar -xzf inteligencia_amenazas_completo.tar.gz
 
-# 2. Setup environment
-python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+# Entrar al directorio
+cd inteligencia_amenazas_completo
+```
+
+### 2️⃣ Ejecutar instalación automática
+
+```bash
+# Hacer ejecutable el instalador
+chmod +x INSTALL.sh
+
+# Ejecutar instalación
+./INSTALL.sh
+```
+
+El script instalará automáticamente:
+- ✅ Ollama
+- ✅ Modelo Llama 3.1 8B
+- ✅ Todas las dependencias Python
+- ✅ Configuración de directorios
+- ✅ Validación del sistema
+
+### 3️⃣ Configurar credenciales
+
+```bash
+# Editar archivo de credenciales
+nano config/credentials.env
+```
+
+**IMPORTANTE**: Completar las siguientes variables:
+
+```env
+# SMTP (Correo)
+SMTP_SERVER=mail.ejemplo.local
+SMTP_PORT=587
+SMTP_USERNAME=threat.intelligence@ejemplo.local
+SMTP_PASSWORD=TU_CONTRASEÑA_AQUI
+
+# Destinatarios
+ALERT_EMAIL_TO=soc@ejemplo.local,ciso@ejemplo.local
+REPORT_EMAIL_TO=ciso@ejemplo.local,cto@ejemplo.local
+
+# Admin
+ADMIN_EMAIL=administrador.sistemas@ejemplo.local
+```
+
+### 4️⃣ Validar instalación
+
+```bash
+# Activar entorno virtual
+source venv/bin/activate
+
+# Validar sistema
+python scripts/validate_system.py
+```
+
+### 5️⃣ Ejecutar prueba inicial
+
+```bash
+# Modo prueba (no envía emails)
+python src/inteligencia_amenazas/main.py --test
+```
+
+---
+
+## 🎯 COMANDOS PRINCIPALES
+
+### Con Makefile (Recomendado)
+
+```bash
+# Ver todos los comandos
+make help
+
+# Ejecutar tests
+make test
+
+# Validar sistema
+make validate
+
+# Modo prueba
+make run-test
+
+# Recolección diaria
+make run-daily
+
+# Informe mensual
+make run-monthly
+
+# Modo daemon (continuo)
+make run-daemon
+```
+
+### Directamente con Python
+
+```bash
+# Activar entorno virtual primero
+source venv/bin/activate
+
+# Modo prueba
+python src/inteligencia_amenazas/main.py --test
+
+# Recolección diaria (una vez)
+python src/inteligencia_amenazas/main.py --once daily
+
+# Informe mensual (una vez)
+python src/inteligencia_amenazas/main.py --once monthly
+
+# Modo daemon (ejecución continua)
+python src/inteligencia_amenazas/main.py --daemon
+
+# Ver estado
+python src/inteligencia_amenazas/main.py --status
+```
+
+---
+
+## 📁 ESTRUCTURA DEL PROYECTO
+
+```
+inteligencia_amenazas_completo/
+├── config/                      # Configuración
+│   ├── agents.yaml              # Definición de agentes
+│   ├── tasks.yaml               # Definición de tareas
+│   ├── sources.json             # Fuentes RSS/API
+│   ├── technologies.json        # Inventario de tecnologías
+│   └── credentials.env          # Credenciales (EDITAR)
+│
+├── src/inteligencia_amenazas/   # Código fuente
+│   ├── crew.py                  # Orquestación de agentes
+│   ├── main.py                  # Punto de entrada
+│   └── tools/                   # Herramientas especializadas
+│       ├── rss_parser.py
+│       ├── api_client.py
+│       ├── email_sender.py
+│       ├── docx_generator.py
+│       └── web_scraper.py
+│
+├── tests/                       # Tests (90+)
+├── scripts/                     # Scripts de utilidad
+├── data/                        # Datos generados
+├── reports/                     # Informes generados
+└── logs/                        # Logs del sistema
+```
+
+---
+
+## 🔧 SOLUCIÓN RÁPIDA DE PROBLEMAS
+
+### Ollama no responde
+
+```bash
+sudo systemctl restart ollama
+ollama list
+```
+
+### Python no encuentra módulos
+
+```bash
+# Asegúrate de estar en el entorno virtual
+source venv/bin/activate
+
+# Reinstalar dependencias
 pip install -r requirements.txt
-
-# 3. Download translation model
-python scripts/setup_translation.py
-
-# 4. Configure
-cp config/config.example.yaml config/config.yaml
-nano config/config.yaml  # Edit email settings
-
-# 5. Test
-python core/collector.py --test
 ```
 
-## 📧 Minimum Configuration
-
-Edit `config/config.yaml`:
-
-```yaml
-email:
-  smtp:
-    server: smtp.gmail.com
-    port: 587
-    username: your-email@gmail.com
-    password: ""  # Set via: export PHANTOMCORTEX_EMAIL_PASSWORD="xxx"
-    
-  to_addresses:
-    - your-email@gmail.com
-```
-
-## 🎯 First Run
+### Credenciales incorrectas
 
 ```bash
-# Collect threats
-python core/collector.py
+# Verificar archivo
+cat config/credentials.env
 
-# View results
-cat data/daily_threats.json | python -m json.tool | head -50
+# Editar
+nano config/credentials.env
 
-# Send alert (if threats found)
-python modules/alerting.py
+# Validar
+python scripts/validate_system.py
 ```
 
-## 📅 Automate (Linux/Mac)
+---
+
+## 📚 DOCUMENTACIÓN COMPLETA
+
+- **README.md** - Documentación principal del proyecto
+- **Documentacion/GUIA_COMPLETA_INSTALACION.md** - Guía detallada de instalación
+- **Documentacion/GUIA_TESTING_VALIDACION.md** - Guía de testing
+
+---
+
+## 💡 EJEMPLOS DE USO
+
+### Ejemplo 1: Primera ejecución
 
 ```bash
-# Edit crontab
-crontab -e
+# 1. Instalar
+./INSTALL.sh
 
-# Add daily collection at 8 AM
-0 8 * * * cd /path/to/PhantomCortex && ./scripts/run_daily.sh
+# 2. Configurar
+nano config/credentials.env
+
+# 3. Probar
+source venv/bin/activate
+make run-test
 ```
 
-## 🆘 Troubleshooting
+### Ejemplo 2: Producción
 
-### Translation not working?
 ```bash
-python scripts/setup_translation.py --test
+# Activar entorno
+source venv/bin/activate
+
+# Ejecutar en modo daemon
+make run-daemon
+
+# O configurar como servicio systemd
+# (ver GUIA_COMPLETA_INSTALACION.md)
 ```
 
-### Email not sending?
-```bash
-# Check SMTP settings
-python scripts/test_email.py
+---
 
-# For Gmail: Use App Password, not regular password
-# https://myaccount.google.com/apppasswords
-```
+## 🆘 SOPORTE
 
-### No threats collected?
-```bash
-# Run in debug mode
-python core/collector.py --debug
+**Email**: 
+- soc@ejemplo.local
+- administrador.sistemas@ejemplo.local
 
-# Check if your technologies are configured
-cat config/technologies.yaml
-```
+**Documentación**: Ver carpeta `Documentacion/`
 
-## 📚 Next Steps
+---
 
-1. **Customize**: See [docs/CUSTOMIZATION.md](docs/CUSTOMIZATION.md)
-2. **Add Sources**: Edit `config/sources.yaml`
-3. **Schedule**: See [docs/INSTALLATION.md](docs/INSTALLATION.md#scheduling-automation)
-4. **Learn More**: Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+## ✅ CHECKLIST POST-INSTALACIÓN
 
-## 🎉 That's it!
+- [ ] INSTALL.sh ejecutado exitosamente
+- [ ] credentials.env configurado
+- [ ] `make validate` pasa sin errores
+- [ ] `make test` ejecuta correctamente
+- [ ] `make run-test` funciona en modo prueba
+- [ ] Emails de prueba llegan correctamente
 
-You now have a working threat intelligence platform.
+---
 
-**Need help?** Check [docs/](docs/) or open an [issue](https://github.com/yourusername/PhantomCortex/issues).
+**¡Sistema listo para producción!** 🎉

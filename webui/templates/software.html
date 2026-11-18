@@ -1,0 +1,325 @@
+{% extends "base.html" %}
+{% block titulo %}Software{% endblock %}
+{% block contenido %}
+{# Zona viva (2026-09-10): esta pantalla se actualiza sin recargar. Las acciones
+   marcadas con `data-accion-viva` y los enlaces de esta misma dirección piden la
+   página al servidor y sustituyen solo este trozo, así que no se pierde el sitio
+   ni la posición de desplazamiento. Sin JavaScript todo funciona igual que antes,
+   con recarga. Contrato en docs/INTERACCION_SIN_RECARGA_2026-09-10.md. #}
+<div id="pagina-software" data-zona-viva data-zona-nombre="Software del parque" tabindex="-1">
+{% from "_paginacion.html" import paginacion %}
+{#
+  Software instalado y mapa de nombres OCS -> tecnología (docs/INVENTARIO_OCS_2026-09-04.md).
+  Orden de lectura: 1) cobertura del mapa, 2) clasificar (nueva regla, propuestas,
+  sin clasificar), 3) tecnologías con activos y dispersión de versiones, 4) reglas.
+  Sin style= ni on*= (CSP estricta).
+#}
+<div class="titulo-pagina" data-tour="1" data-tour-titulo="Software y mapa de nombres" data-tour-texto="OCS informa miles de nombres de programa. Aquí se ve cómo se clasifican en tecnologías del inventario, qué reglas lo hacen y qué queda por revisar.">
+  <div>
+    <h1>Software instalado y mapa de nombres</h1>
+    <p>OCS informa miles de nombres de programa distintos. El <strong>mapa de nombres</strong> los
+       clasifica en tecnologías del inventario («Google Chrome» → Chrome, «apache2» → Apache HTTP Server):
+       así cada tecnología sabe en cuántos activos está y con qué versiones, y los avisos se pueden
+       comparar con la versión real instalada.</p>
+  </div>
+  <div class="acciones-titulo">
+    <a class="btn" href="{{ url_for('activos.lista') }}">Activos</a>
+    <a class="btn" href="{{ url_for('tecnologias.lista') }}">Inventario de tecnologías</a>
+    {% if es_admin %}
+    <form method="post" action="{{ url_for('activos.sembrar_mapa') }}" class="inline"
+          data-accion-viva="pagina-software" data-accion-espera="Sembrando el mapa…" data-accion-tiempo="120000">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="btn" type="submit">Cargar mapa base</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+{# ================================================== 1. cobertura #}
+<div class="rejilla c4 mb-18" data-tour="2" data-tour-titulo="Cobertura" data-tour-texto="Nombres distintos, instalaciones y qué porcentaje está clasificado. Todo el software tiene tecnología asignada: lo que no casa con una regla se clasifica por respaldo según su sistema.">
+  <div class="panel metrica">
+    <div class="valor">{{ resumen.nombres | numero }}</div>
+    <div class="etiqueta">Nombres de programa</div>
+    <div class="nota">distintos en los activos presentes</div>
+  </div>
+  <div class="panel metrica">
+    <div class="valor">{{ resumen.instalaciones | numero }}</div>
+    <div class="etiqueta">Instalaciones</div>
+    <div class="nota">programa × activo</div>
+  </div>
+  {#
+    El porcentaje honesto (auditoría de tableros del 2026-09-15, punto 10): esta tarjeta
+    decía «100,0 %» con «1 nombre sin clasificar» en la tarjeta de al lado y «99,99 %» en
+    la página de Activos. 813.506 de 813.507 no es el cien por cien, y redondear a un
+    decimal lo convertía en uno. ``ocs.resumen`` ya devuelve el valor sin ese redondeo
+    (``pct_mapeado_valor``) y con los decimales que hacen falta (``pct_mapeado_decimales``):
+    solo se escribe «100 %» cuando no queda ni una instalación fuera.
+  #}
+  <div class="panel metrica {% if resumen.pct_mapeado >= 60 %}exito{% elif resumen.instalaciones %}medio{% else %}neutro{% endif %}">
+    <div class="valor">{% if resumen.pct_mapeado_valor is defined %}{{ graficos.fmt(resumen.pct_mapeado_valor, resumen.pct_mapeado_decimales) }}{% else %}{{ graficos.fmt(resumen.pct_mapeado, 1) }}{% endif %} %</div>
+    <div class="etiqueta">Instalaciones clasificadas</div>
+    <div class="nota">{{ resumen.instalaciones_mapeadas | numero }} con tecnología asignada{% if resumen.instalaciones_sin_clasificar %},
+      {{ resumen.instalaciones_sin_clasificar | numero }} sin clasificar{% endif %}</div>
+  </div>
+  <div class="panel metrica {% if resumen.sin_clasificar %}medio{% else %}neutro{% endif %}">
+    <div class="valor">{{ resumen.sin_clasificar | numero }}</div>
+    <div class="etiqueta">Nombres sin clasificar</div>
+    <div class="nota">ordenados abajo por número de activos</div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-cabecera">
+    <h2>Cobertura del mapa de nombres</h2>
+    <span class="sub">¿Qué parte del software instalado está clasificado en una tecnología del inventario? Lo que no lo está no puede compararse con los avisos (salvo los paquetes de Debian, Ubuntu y FreeBSD, que se evalúan por su base de datos).</span>
+  </div>
+  <div class="panel-cuerpo">
+    {{ graficos.barra_progreso(graf.mapa, aria="Instalaciones de software clasificadas y sin clasificar") }}
+  </div>
+</div>
+
+{# ================================================== 2. clasificar #}
+<div class="rejilla uno-dos">
+  {% if es_admin %}
+  <div class="panel" data-tour="3" data-tour-titulo="Crear una regla a mano" data-tour-texto="Nombre de programa (o un prefijo o expresión regular) y la tecnología a la que pertenece. Las reglas manuales mandan sobre las del mapa base y sobre las automáticas.">
+    <div class="panel-cabecera"><h2>Nueva regla</h2><span class="sub">Una regla traduce el nombre con el que OCS Inventory reporta un programa a una tecnología del inventario. Créela cuando un programa aparezca «sin clasificar» o clasificado en la tecnología equivocada: a partir de ese momento cuenta en los activos y versiones de esa tecnología y la evaluación de vulnerabilidades sabe a qué aviso corresponde.</span></div>
+    <div class="panel-cuerpo">
+      <form method="post" action="{{ url_for('activos.regla_nueva') }}"
+            data-accion-viva="pagina-software" data-accion-espera="Aplicando la regla…" data-accion-tiempo="120000">
+        <input type="hidden" name="csrf" value="{{ csrf }}">
+        <div class="campo">
+          <label for="patron">Nombre de programa o patrón</label>
+          <input type="text" id="patron" name="patron" required placeholder="mozilla firefox" class="mono">
+          <div class="ayuda">Con «Nombre exacto» debe coincidir todo el nombre; con «Empieza por» basta el principio («7-zip» clasifica «7-Zip 26.00 (x64)»).</div>
+        </div>
+        <div class="campo-fila">
+          <div class="campo">
+            <label for="modo">Modo</label>
+            <select id="modo" name="modo">{% for m in modos %}<option value="{{ m }}">{{ modo_es[m] }}</option>{% endfor %}</select>
+          </div>
+          <div class="campo">
+            <label for="technology_id">Tecnología</label>
+            <select id="technology_id" name="technology_id" required>
+              <option value="">Elegir…</option>
+              {% for t in tecnologias %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+            </select>
+          </div>
+        </div>
+        <div class="campo">
+          <label for="paquete_fuente">Paquete fuente en Debian o Ubuntu (opcional)</label>
+          <input type="text" id="paquete_fuente" name="paquete_fuente" class="mono" placeholder="apache2">
+          <div class="ayuda">Solo si el nombre del paquete instalado no coincide con el paquete fuente que usa OSV.dev (libssl3 → openssl).</div>
+        </div>
+        <button class="btn primario" type="submit">Guardar regla</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="panel" data-tour="4" data-tour-titulo="Sugerencias" data-tour-texto="Nombres que coinciden con una tecnología o un alias del inventario: aceptar crea la regla.">
+    <div class="panel-cabecera">
+      <h2>Propuestas automáticas</h2>
+      <span class="sub">Nombres sin clasificar que coinciden con una tecnología o un alias del inventario. {% if es_admin %}«Aceptar» crea la regla de nombre exacto.{% endif %}</span>
+    </div>
+    <div class="panel-cuerpo sin-relleno">
+      {% if propuestas %}
+      <div class="tabla-envoltorio">
+        <table class="tabla-compacta">
+          <thead><tr><th>Programa en OCS</th><th class="num">Activos</th><th>Tecnología propuesta</th>{% if es_admin %}<th class="acciones"></th>{% endif %}</tr></thead>
+          <tbody>
+          {% for p in propuestas %}
+            <tr>
+              <td class="mono">{{ p.nombre }}</td>
+              <td class="num">{{ p.activos | numero }}</td>
+              <td>{{ p.tecnologia }}</td>
+              {% if es_admin %}
+              <td class="acciones">
+                <form method="post" action="{{ url_for('activos.regla_nueva') }}" class="inline"
+                      data-accion-viva="pagina-software" data-accion-espera="Aplicando la regla…" data-accion-tiempo="120000">
+                  <input type="hidden" name="csrf" value="{{ csrf }}">
+                  <input type="hidden" name="patron" value="{{ p.nombre_norm }}">
+                  <input type="hidden" name="modo" value="exacto">
+                  <input type="hidden" name="technology_id" value="{{ p.tecnologia_id }}">
+                  <button class="btn pequeno" type="submit">Aceptar</button>
+                </form>
+              </td>
+              {% endif %}
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="vacio"><p>Sin propuestas pendientes.</p><p class="pequeno">Todo lo que se parece a una tecnología del inventario ya está clasificado.</p></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="panel" data-tour="5" data-tour-titulo="Revisión" data-tour-texto="Nombres sin regla propia (si los hay). Se clasifican en línea eligiendo la tecnología.">
+  <div class="panel-cabecera">
+    <h2>Software sin clasificar</h2>
+    <form method="get" class="filtros" data-filtro-vivo="sin-clasificar">
+      <div class="campo">
+        <label for="q">Buscar nombre</label>
+        <input type="text" id="q" name="q" value="{{ q }}" placeholder="chrome, java, vnc…">
+      </div>
+      <button class="btn pequeno" type="submit">Filtrar</button>
+      {% if q %}<a class="btn pequeno" href="{{ url_for('activos.software') }}">Limpiar</a>{% endif %}
+    </form>
+    {#
+      El recuento y el texto buscado NO van aquí: la búsqueda en vivo sustituye solo
+      la zona «#sin-clasificar» y esta cabecera se quedaría con las cifras de la
+      búsqueda anterior (hallazgo del revisor, 2026-09-07). El recuento lo dice la
+      paginación del final de la tabla, que sí está dentro de la zona.
+    #}
+    <span class="sub">Nombres de programa de OCS Inventory sin tecnología asignada, los presentes en más
+      activos primero, por páginas de {{ por_pagina | numero }} y con el recuento al final de la tabla.
+      Las bibliotecas del sistema no necesitan clasificarse: OSV.dev y VuXML las evalúan por su nombre de paquete.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno" id="sin-clasificar" tabindex="-1" data-zona-viva
+       data-zona-nombre="Software sin clasificar">
+    {% if sin_clasificar %}
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead><tr><th>Programa en OCS</th><th class="num">Activos</th><th class="num">Versiones distintas</th>{% if es_admin %}<th>Clasificar como</th>{% endif %}</tr></thead>
+        <tbody>
+        {% for s in sin_clasificar %}
+          <tr>
+            <td class="mono">{{ s.nombre }}</td>
+            <td class="num">{{ s.activos | numero }}</td>
+            <td class="num">{{ s.versiones | numero }}</td>
+            {% if es_admin %}
+            <td>
+              <form method="post" action="{{ url_for('activos.regla_nueva') }}" class="flex-4"
+                    data-accion-viva="pagina-software" data-accion-espera="Aplicando la regla…" data-accion-tiempo="120000">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <input type="hidden" name="patron" value="{{ s.nombre_norm }}">
+                <input type="hidden" name="modo" value="exacto">
+                <label for="tec-{{ loop.index }}" class="oculto-visual">Tecnología para {{ s.nombre }}</label>
+                <select id="tec-{{ loop.index }}" name="technology_id" required>
+                  <option value="">Tecnología…</option>
+                  {% for t in tecnologias %}<option value="{{ t.id }}"{% if s.tecnologia_id == t.id %} selected{% endif %}>{{ t.name }}</option>{% endfor %}
+                </select>
+                <button class="btn pequeno" type="submit">Clasificar</button>
+              </form>
+            </td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {{ paginacion('activos.software', args_sin_clasificar, pagina_sc, paginas_sc, total_sin_clasificar,
+                  por_pagina, singular='nombre sin clasificar', plural='nombres sin clasificar',
+                  ancla='sin-clasificar', zona='sin-clasificar', titulo='Paginación del software sin clasificar') }}
+    {% else %}
+    <div class="vacio"><p>{% if q %}Ningún nombre sin clasificar contiene «{{ q }}».{% else %}Todo el software instalado está clasificado en una tecnología del inventario.{% endif %}</p></div>
+    {% endif %}
+  </div>
+</div>
+
+{# ================================== 3. tecnologías con activos #}
+<div class="panel" data-tour="6" data-tour-titulo="Dispersión de versiones" data-tour-texto="Qué tecnologías están realmente instaladas, en cuántos activos y con cuántas versiones distintas. Cuatro o más versiones señalan dispersión: conviene unificar.">
+  <div class="panel-cabecera">
+    <h2>Tecnologías con activos</h2>
+    <span class="sub">Qué tecnologías del inventario están realmente instaladas, en cuántos activos y con cuántas versiones distintas. Cuatro o más versiones señalan dispersión: conviene unificar. {{ total_con_activos | numero }} {{ 'tecnología con activos' if total_con_activos == 1 else 'tecnologías con activos' }}, por páginas de {{ por_pagina | numero }}.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno" id="tecnologias-con-activos" tabindex="-1" data-zona-viva
+       data-zona-nombre="Tecnologías con activos">
+    {% if con_activos %}
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead><tr><th>Tecnología</th><th class="num">Activos</th><th class="num">Versiones</th><th>Más antigua</th><th>Más reciente</th><th>Detalle de versiones</th></tr></thead>
+        <tbody>
+        {% for t in con_activos %}
+          <tr>
+            {#
+              La insignia de al lado del nombre es la CRITICIDAD de la tecnología en el
+              inventario, no la severidad de una vulnerabilidad: aquí se leía «Baja» a
+              secas, con la misma forma y el mismo color que una insignia de severidad, en
+              una plataforma donde la severidad Baja no se nombra ni se cuenta. Se escribe
+              entera, con su nombre, para que no haya dos cosas distintas con la misma
+              etiqueta (2026-09-15).
+            #}
+            <td><a href="{{ url_for('tecnologias.detalle', tec_id=t.id) }}">{{ t.name }}</a> <span class="insignia {{ t.criticality }}" title="Criticidad que el inventario tecnológico asigna a esta tecnología; no es la severidad de ninguna vulnerabilidad">Criticidad: {{ {'critical': 'crítica', 'high': 'alta', 'medium': 'media', 'low': 'baja'}.get(t.criticality, t.criticality) }}</span></td>
+            <td class="num">{{ t.activos_ocs | numero }}</td>
+            <td class="num">{{ t.n_versiones | numero }}{% if t.dispersion %} <span class="insignia medium" title="Cuatro o más versiones distintas instaladas">dispersión</span>{% endif %}</td>
+            <td class="mono pequeno">{{ t.versiones[0].version if t.versiones else '—' }}</td>
+            <td class="mono pequeno">{{ t.versiones[-1].version if t.versiones else '—' }}</td>
+            <td class="pequeno tenue">{% for v in t.versiones[:6] %}<span class="mono">{{ v.version }}</span> ({{ v.activos | numero }} {{ 'activo' if v.activos == 1 else 'activos' }}){% if not loop.last %}, {% endif %}{% endfor %}{% if t.n_versiones > 6 %} y {{ (t.n_versiones - 6) | numero }} más{% endif %}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {{ paginacion('activos.software', args_tecnologias, pagina_tec, paginas_tec, total_con_activos,
+                  por_pagina, singular='tecnología con activos', plural='tecnologías con activos',
+                  ancla='tecnologias-con-activos', zona='tecnologias-con-activos', clave='pagina_tecnologias',
+                  titulo='Paginación de las tecnologías con activos') }}
+    {% else %}
+    <div class="vacio"><p>Ninguna tecnología tiene activos asociados todavía.</p><p class="pequeno">Cargue el mapa base o clasifique software para que el inventario se rellene desde OCS.</p></div>
+    {% endif %}
+  </div>
+</div>
+
+{# ================================================ 4. reglas #}
+<div class="panel" data-tour="7" data-tour-titulo="Todas las reglas" data-tour-texto="Manuales, del mapa base y automáticas (una por nombre de programa, creadas por la clasificación de respaldo). Cada una dice a cuántos activos afecta y se puede quitar.">
+  <div class="panel-cabecera">
+    <h2>Reglas del mapa de nombres</h2>
+    <span class="sub">{{ total_reglas | numero }} {{ 'regla' if total_reglas == 1 else 'reglas' }} {% if q %}{{ 'que coincide' if total_reglas == 1 else 'que coinciden' }} con «{{ q }}», automáticas incluidas{% else %}manuales y del mapa base{% if n_automaticas %}; además {{ n_automaticas | numero }} automáticas (una por nombre de programa, creadas por la clasificación de respaldo) que aparecen al buscar por nombre{% endif %}{% endif %}, por páginas de {{ por_pagina | numero }}. «Activos» cuenta en cuántos activos presentes casa cada regla. Las manuales mandan sobre el mapa base y este sobre las automáticas.</span>
+  </div>
+  <div class="panel-cuerpo sin-relleno" id="reglas-del-mapa" tabindex="-1" data-zona-viva
+       data-zona-nombre="Reglas del mapa">
+    {# Peticion del usuario (2026-09-08): «no es muy clara para qué se crean las reglas». #}
+    <p class="pequeno explicacion-reglas">
+      <strong>Para qué sirven las reglas.</strong> OCS Inventory reporta cada programa con el nombre que
+      le da el sistema operativo (<span class="mono">google chrome</span>, <span class="mono">libcurl4t64:amd64</span>,
+      <span class="mono">openssh-server</span>…) y una misma tecnología llega con decenas de nombres distintos.
+      Cada regla dice «este nombre <em>es</em> esta tecnología del inventario». Con eso la plataforma sabe en
+      qué activos está instalada cada tecnología y con qué versión, cuenta como una sola cosa lo que OCS
+      reporta con varios nombres, y la evaluación de vulnerabilidades puede comparar la versión instalada
+      con la que corrige cada aviso. Sin regla, el programa queda «sin clasificar» y sus avisos no se pueden
+      confirmar en ningún activo. Modos: <strong>Nombre exacto</strong>, <strong>Empieza por</strong> (un
+      prefijo, útil para familias como <span class="mono">python3-</span>) y <strong>Expresión regular</strong>.
+      Las reglas manuales mandan sobre las del mapa base, y estas sobre las automáticas que crea la
+      clasificación de respaldo.
+    </p>
+    {% if reglas %}
+    <div class="tabla-envoltorio">
+      <table class="tabla-compacta">
+        <thead><tr><th>Patrón</th><th>Modo</th><th>Tecnología</th><th>Paquete fuente</th><th>Origen</th><th class="num">Activos</th>{% if es_admin %}<th class="acciones"></th>{% endif %}</tr></thead>
+        <tbody>
+        {% for r in reglas %}
+          <tr>
+            <td class="mono">{{ r.patron }}</td>
+            <td class="pequeno nowrap">{{ r.modo_es }}</td>
+            <td><a href="{{ url_for('tecnologias.detalle', tec_id=r.technology_id) }}">{{ r.tecnologia }}</a></td>
+            <td class="mono pequeno">{{ r.paquete_fuente or '—' }}</td>
+            <td class="pequeno tenue">{{ {'manual': 'Manual', 'semilla': 'Mapa base', 'automatico': 'Automática (respaldo)'}.get(r.origen, r.origen) }}</td>
+            <td class="num">{{ r.activos | numero }}</td>
+            {% if es_admin %}
+            <td class="acciones">
+              <form method="post" action="{{ url_for('activos.regla_borrar', regla_id=r.id) }}" class="inline"
+                    data-confirm="¿Quitar la regla «{{ r.patron }}»? El software que clasifica volverá a quedar sin tecnología."
+                    data-accion-viva="pagina-software" data-accion-espera="Borrando la regla…" data-accion-tiempo="120000">
+                <input type="hidden" name="csrf" value="{{ csrf }}">
+                <button class="btn pequeno" type="submit">Quitar</button>
+              </form>
+            </td>
+            {% endif %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {{ paginacion('activos.software', args_reglas, pagina_reglas, paginas_reglas, total_reglas,
+                  por_pagina, singular='regla', plural='reglas', ancla='reglas-del-mapa', zona='reglas-del-mapa',
+                  clave='pagina_reglas', titulo='Paginación de las reglas del mapa de nombres') }}
+    {% else %}
+    <div class="vacio"><p>{% if q %}Ninguna regla coincide con «{{ q }}».{% else %}Sin reglas.{% endif %}</p>{% if es_admin %}<p class="pequeno">Pulse «Cargar mapa base» para partir de las reglas habituales (navegadores, Java, servidores web, bases de datos…).</p>{% endif %}</div>
+    {% endif %}
+  </div>
+</div>
+</div>{# fin de la zona viva #}
+{% endblock %}
