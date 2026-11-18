@@ -532,33 +532,5 @@ df -h /home/threatintel/inteligencia_amenazas
    - Habilitar monitoreo
    - Configurar backups
 
-4. **Integrar con otros sistemas**
-   - Wazuh SIEM
-   - Sistemas de ticketing
-   - Dashboards de visualización
-
----
-
-## 📞 SOPORTE
-
-**Email de Soporte:**
-- soc@ejemplo.local
-
-**Documentación Adicional:**
-- Ver README.md para guía completa
-- Ver archivos SKILL.md en /mnt/skills/ para detalles técnicos
-
----
-
-## 📄 LICENCIA
-
-MIT License - Jefa del Proceso C y Cia S.A.
-
----
-
-**Desarrollado por**: Equipo de Ciberseguridad  
-**Organización**: Jefa del Proceso C y Cia S.A.  
-**Versión**: 1.0.0  
-**Fecha**: Diciembre 2025  
 
 **¡Sistema completamente funcional y listo para producción!** 🎉
