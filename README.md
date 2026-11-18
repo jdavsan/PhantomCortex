@@ -4,9 +4,6 @@ Plataforma de código abierto para recolectar, correlacionar, priorizar y alerta
 vulnerabilidades de ciberseguridad **contra el inventario tecnológico real** de una
 organización, con un informe mensual automático y una interfaz web de administración.
 
-> Este documento describe el sistema tal como está instalado. El razonamiento detallado
-> de cada decisión de diseño vive en `docs/` (ver la tabla de Documentación más abajo).
-
 ---
 
 ## Qué es y para quién
