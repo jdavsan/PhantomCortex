@@ -4,8 +4,8 @@ Plataforma de código abierto para recolectar, correlacionar, priorizar y alerta
 vulnerabilidades de ciberseguridad **contra el inventario tecnológico real** de una
 organización, con un informe mensual automático y una interfaz web de administración.
 
-> Este documento describe el sistema tal como está instalado. El historial detallado
-> de versiones, con el razonamiento de cada decisión, vive en `docs/HISTORIAL.md`.
+> Este documento describe el sistema tal como está instalado. El razonamiento detallado
+> de cada decisión de diseño vive en `docs/` (ver la tabla de Documentación más abajo).
 
 ---
 
@@ -459,8 +459,8 @@ proxy con TLS (ver `deploy/nginx/`), nunca directamente en Internet.
 | **Excepciones** | Aceptación de riesgo con responsable, justificación y plazo (con vencimiento o permanente con revisión periódica) |
 | **Tendencias** | Serie histórica por severidad, madurez del dato, CVSS medio, CVE recurrentes |
 | **Informes** | Generador a medida: plantillas, periodo, alcance, severidades y vista previa antes de descargar |
-| **Credenciales** | Renovar la contraseña SMTP, verificar, destinatarios, clave de API de NVD |
-| **Ajustes** | Todos los parámetros que el código lee de verdad, agrupados por efecto |
+| **Credenciales** | Servidor SMTP (servidor, puerto, usuario, cifrado, remitente), renovar la contraseña, verificar, destinatarios, clave de API de NVD |
+| **Ajustes** | Todos los parámetros que el código lee de verdad, agrupados por efecto; logo de la organización |
 | **Mi perfil** | Identidad, último acceso, sesiones abiertas, cambio de contraseña y segundo factor |
 | **Consultas al inventario** (administradores) | Fecha, duración y resultado de cada sincronización con cada fuente configurada |
 | **Auditoría** | Quién cambió qué, cuándo y desde dónde |
@@ -479,7 +479,7 @@ journalctl -u threat-intel-webui -f     # log en vivo
 
 ```bash
 .venv/bin/python bin/gestionar_usuario.py listar
-.venv/bin/python bin/gestionar_usuario.py crear <correo> --nombre "Nombre Apellidos" --rol viewer
+.venv/bin/python bin/gestionar_usuario.py crear <correo> --nombre "Nombre Apellidos" --rol redes
 .venv/bin/python bin/gestionar_usuario.py password <usuario>
 .venv/bin/python bin/gestionar_usuario.py desbloquear <usuario>
 ```
@@ -496,11 +496,9 @@ comportamiento real.
 | Perfil (`users.role`) | Nombre visible | Qué ve | Qué puede hacer | Alcance de activos |
 |---|---|---|---|---|
 | `admin` | Administrador | Todo, incluida Administración | Configuración, fuentes, inventario, usuarios, estado de amenazas, informes y remediación | Todos los tipos de activo |
-| `operador_soc` | Operador SOC | Operación e Inventario completos, Informes | Cambia el estado de una amenaza, evalúa un CVE contra un activo, genera informes | Todos los tipos de activo |
-| `servicios_tecnologicos` | Jefe de proceso | Operación e Inventario, con el avance de remediación de su proceso | Pide y documenta la comprobación de una remediación | Todos los tipos de activo |
-| `redes` | Redes | Igual, acotado a un tipo de activo | Pide y documenta comprobaciones de ese tipo | Solo ese tipo (el otro responde 404, no 403) |
-| `mantenimiento` | Mantenimiento | Igual, acotado al otro tipo de activo | Pide y documenta comprobaciones de ese tipo | Solo ese tipo |
-| `viewer` | Solo lectura | Operación e Inventario completos, sin Administración ni Informes | Nada: ninguna ruta de escritura le responde | Todos los tipos de activo |
+| `ciberseguridad` | Ciberseguridad | Operación e Inventario completos | Cambia el estado de una amenaza, evalúa un CVE contra un activo | Todos los tipos de activo (no genera informes ni remedia) |
+| `redes` | Redes | Operación e Inventario acotados a servidores | Pide y documenta la comprobación de una remediación | Solo servidores (equipos de cómputo responde 404, no 403) |
+| `mantenimiento` | Mantenimiento | Operación e Inventario acotados a equipos de cómputo | Pide y documenta la comprobación de una remediación | Solo equipos de cómputo |
 
 El alcance se aplica siempre en el servidor (consultas SQL, fichas, exportaciones y
 acciones), nunca solo ocultando botones en el menú.
@@ -555,6 +553,10 @@ Una línea JSON por evento, con rotación automática.
 ./create_backup.sh                    # manual (o por cron)
 ./restore_backup.sh <archivo.tar.gz>
 ```
+
+Incluye el código, la base de datos completa (con `sqlite3 .backup`, consistente aunque
+la plataforma esté corriendo) y la configuración cifrada; borra solo los `.tar.gz` de
+más de 30 días. Se ejecuta en cron una vez por semana.
 
 La clave de cifrado está en `BACKUP_PASSPHRASE` dentro de `config/credentials.env`,
 nunca en el script. Sin esa clave el backup de credenciales no se puede descifrar:
@@ -626,12 +628,14 @@ un aviso.
 
 | Documento | Contenido |
 |---|---|
-| `docs/HISTORIAL.md` | Historial de versiones y decisiones de diseño |
 | `docs/DISENO_INTERFAZ_2026-09-03.md` | Especificación del diseño de la interfaz: paleta, componentes, gráficos SVG |
 | `docs/PRECISION_ALERTAS_2026-09-04.md` | Criterio de alerta por relevancia, resumen semanal, correlación por paquete, estados |
 | `docs/INVENTARIO_OCS_2026-09-04.md` | Inventario real, fuentes de aplicabilidad y validación por activo |
+| `docs/EXCEPCIONES_2026-09-10.md` | Aceptación de riesgo: con vencimiento o permanente, revisión periódica |
+| `docs/OWASP_2026-09-03.md` | Revisión de seguridad según OWASP Top 10 |
 
 ## Licencia y contribuciones
 
-Este proyecto se publica para que cualquier equipo de seguridad lo adapte a su
-propio inventario y sus propias fuentes. 
+Publicado bajo licencia MIT (ver `LICENSE`): libre para adaptar a tu propio inventario
+y tus propias fuentes. Las contribuciones (incidencias, mejoras) son bienvenidas por
+`pull request`. 
