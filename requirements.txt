@@ -29,7 +29,7 @@ openpyxl==3.1.5             # hoja de calculo de la alerta (una pestana por vuln
 Pillow==12.3.0               # valida y normaliza el logo subido (formato real, no la extension)
 
 # --- traduccion ---
-argostranslate==1.10.0      # traduccion offline EN->ES (requiere el modelo)
+argostranslate==1.11.0      # traduccion offline EN->ES (requiere el modelo)
 # Ollama se usa via su API HTTP: no necesita paquete de Python.
 
 # --- interfaz de administracion ---
