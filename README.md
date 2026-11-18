@@ -118,7 +118,6 @@ inteligencia_amenazas/
 │   └── inventarios.yml.example    # plantilla de fuentes de inventario
 ├── data/                          # base de datos y cachés (no se versiona)
 ├── deploy/                        # unidad de systemd y configuración de referencia de nginx
-├── docs/                          # documentación ampliada
 ├── requirements.txt
 └── .venv/                         # entorno virtual (no se versiona)
 ```
@@ -293,9 +292,6 @@ docker-compose up -d
 
 # 4. Acceder en http://localhost:9090
 ```
-
-Consulta `docs/DOCKER_DEPLOYMENT_2026-11-16.md` para configuración avanzada, despliegue en máquina directa y operación.
-
 ---
 
 ## Instalación desde cero
@@ -464,7 +460,7 @@ proxy con TLS (ver `deploy/nginx/`), nunca directamente en Internet.
 
 **Gráficos**: todos son SVG generados en el servidor, sin librerías externas ni
 JavaScript de terceros, para que la cabecera CSP siga sin `unsafe-inline`. Tema claro
-y oscuro. Especificación completa en `docs/DISENO_INTERFAZ_2026-09-03.md`.
+y oscuro.
 
 ```bash
 systemctl status threat-intel-webui     # estado (si se instaló como servicio)
@@ -620,16 +616,6 @@ un aviso.
   cambios del propio código hasta que se decida publicarlo.
 
 ---
-
-## Documentación
-
-| Documento | Contenido |
-|---|---|
-| `docs/DISENO_INTERFAZ_2026-09-03.md` | Especificación del diseño de la interfaz: paleta, componentes, gráficos SVG |
-| `docs/PRECISION_ALERTAS_2026-09-04.md` | Criterio de alerta por relevancia, resumen semanal, correlación por paquete, estados |
-| `docs/INVENTARIO_OCS_2026-09-04.md` | Inventario real, fuentes de aplicabilidad y validación por activo |
-| `docs/EXCEPCIONES_2026-09-10.md` | Aceptación de riesgo: con vencimiento o permanente, revisión periódica |
-| `docs/OWASP_2026-09-03.md` | Revisión de seguridad según OWASP Top 10 |
 
 ## Licencia y contribuciones
 
