@@ -65,16 +65,23 @@ secrets/
 
 # ================================================================
 # Datos Generados por el Sistema
+#
+# «directorio/» + «!directorio/.gitkeep» NUNCA funciona: git no vuelve a
+# incluir nada dentro de un directorio que ya excluyó por completo (limitación
+# documentada de .gitignore), así que el .gitkeep nunca llegaba a rastrearse y
+# un clon nuevo no tenía estas carpetas (CI fallaba por eso: tests.TemporaryDirectory
+# las necesita para existir). «directorio/*» sí deja entrar al directorio a
+# evaluar la excepción.
 # ================================================================
-data/
+data/*
 !data/.gitkeep
-reports/
+reports/*
 !reports/.gitkeep
-logs/
+logs/*
 !logs/.gitkeep
-temp/
+temp/*
 !temp/.gitkeep
-backups/
+backups/*
 !backups/.gitkeep
 
 # ================================================================
