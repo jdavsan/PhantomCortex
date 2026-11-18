@@ -17,7 +17,7 @@
 # ======================================================================
 
 # --- recoleccion ---
-feedparser==6.0.12          # parseo de RSS y Atom
+feedparser==6.0.14          # parseo de RSS y Atom
 requests==2.32.3            # HTTP con reintentos y cabeceras controladas
 
 # --- configuracion ---
