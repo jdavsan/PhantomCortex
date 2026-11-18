@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Informe de inventario sin reportar, para Servicios Tecnologicos.
+"""Informe de inventario sin reportar, para Redes.
 
 Equipos que llevan mas de `ocs_stale_days` dias sin enviar su inventario a OCS Inventory,
 separados por servidores y equipos de usuario.
 
 Va en un correo APARTE del de alertamiento diario (peticion del usuario del 2026-09-07):
-mantener el inventario al dia no es una tarea de seguridad, sino de Servicios Tecnologicos,
+mantener el inventario al dia no es una tarea de seguridad, sino de Redes,
 y mezclarlo con las vulnerabilidades hacia que se leyera como un hallazgo de seguridad.
 
 Los destinatarios se configuran en Ajustes (`inventario_destinatarios`) y el envio se
@@ -92,16 +92,21 @@ def main() -> int:
 
     ensure_dirs()
     setup()
-    cfg = config.load()
+    # db_path=args.db: sin esto, config.load() siempre leía los ajustes (tabla
+    # settings) de la base de PRODUCCIÓN aunque --db apuntara a otra (una de
+    # pruebas, por ejemplo), y fallaba con "no such table: settings" en
+    # cualquier sitio donde la base de producción no existiera (encontrado en
+    # CI, 2026-11-18: un clon nuevo no tiene data/threat_intel.db).
+    cfg = config.load(db_path=args.db)
     print("=" * 70)
-    print("  Informe de inventario sin reportar (Servicios Tecnológicos)")
+    print("  Informe de inventario sin reportar (Redes)")
     print("=" * 70)
 
     ahora = _ahora()
     with db.session(args.db) as conn:
         datos = ocs.inventario_sin_reportar(conn, cfg=cfg, limite=args.limite, ahora=ahora)
         # Lista COMPLETA (sin tope) para los dos ficheros adjuntos: el cuerpo del correo
-        # sigue recortado, pero el fichero que abre Servicios Tecnologicos los lleva todos.
+        # sigue recortado, pero el fichero que abre Redes los lleva todos.
         detallado = ocs.inventario_sin_reportar_detallado(conn, cfg=cfg, ahora=ahora)
 
     print(f"\n  {notify.numero(datos['total'])} de "
